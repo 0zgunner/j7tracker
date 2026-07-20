@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>J7Tracker</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#C68A3D">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="wordmark">J7<span>TRACKER</span></div>
+    <div class="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">CONNECTING</span>
+    </div>
+  </header>
+
+  <div class="ticker-wrap">
+    <div class="ticker-track" id="ticker"></div>
+  </div>
+
+  <div class="layout">
+
+    <div class="col">
+      <div class="section-label">Watched wallets</div>
+
+      <div class="chain-select">
+        <select id="chainSelect">
+          <option value="ethereum">Ethereum</option>
+          <option value="robinhood">Robinhood Chain</option>
+          <option value="solana">Solana</option>
+        </select>
+      </div>
+      <div class="wallet-form">
+        <input type="text" id="walletInput" placeholder="wallet address">
+        <button onclick="app.addWallet()">Add</button>
+      </div>
+      <div id="walletList"></div>
+      <div class="placeholder-note">Wallets persist in this browser only. Activity refreshes every 5 minutes.</div>
+    </div>
+
+    <div class="col">
+      <div class="section-label">Signal log</div>
+      <div class="signal-log" id="signalLog"></div>
+    </div>
+
+    <div class="col">
+      <div class="section-label">Trending now</div>
+      <div id="trendList"></div>
+      <div class="placeholder-note">Pulled from Reddit and free crypto news feeds.</div>
+    </div>
+
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

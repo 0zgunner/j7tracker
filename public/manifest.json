@@ -1,0 +1,10 @@
+{
+  "name": "J7Tracker",
+  "short_name": "J7T",
+  "description": "Wallet, Reddit, and news signal tracker",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B0D10",
+  "theme_color": "#C68A3D",
+  "icons": []
+}

@@ -1,0 +1,13 @@
+{
+  "name": "j7tracker",
+  "version": "1.0.0",
+  "description": "Wallet, Reddit, and news tracker across Ethereum, Robinhood Chain, and Solana",
+  "scripts": {
+    "dev": "netlify dev"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.11",
+    "ethers": "^6.13.0",
+    "@solana/web3.js": "^1.95.0"
+  }
+}
