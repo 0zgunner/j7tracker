@@ -8,16 +8,124 @@ const WALLET_ENDPOINTS = {
 
 const app = {
   wallets: [],
+  watchlist: [],
 
   async init() {
     this.loadWallets();
     this.renderWallets();
+    this.loadWatchlist();
+    this.renderWatchlist();
+
     document.getElementById('walletInput').addEventListener('keypress', e => {
       if (e.key === 'Enter') this.addWallet();
+    });
+    document.getElementById('tokenInput').addEventListener('keypress', e => {
+      if (e.key === 'Enter') this.checkToken();
     });
 
     await this.refresh();
     setInterval(() => this.refresh(), 5 * 60 * 1000);
+  },
+
+  loadWatchlist() {
+    try {
+      const stored = localStorage.getItem('j7t_watchlist');
+      this.watchlist = stored ? JSON.parse(stored) : [];
+    } catch {
+      this.watchlist = [];
+    }
+  },
+
+  saveWatchlist() {
+    localStorage.setItem('j7t_watchlist', JSON.stringify(this.watchlist));
+  },
+
+  async checkToken() {
+    const input = document.getElementById('tokenInput');
+    const mint = input.value.trim();
+    if (!mint) return;
+
+    const resultEl = document.getElementById('tokenCheckResult');
+    resultEl.innerHTML = '<div class="empty-note">Scanning...</div>';
+
+    const data = await this.fetchJson('token-risk', { mint });
+
+    if (data.error) {
+      resultEl.innerHTML = `<div class="empty-note">Scan failed: ${data.error}</div>`;
+      return;
+    }
+
+    this.renderTokenCheck(data, resultEl);
+
+    this.watchlist.unshift({
+      mint: data.mint,
+      level: data.level,
+      score: data.score,
+      concentrationPct: data.concentrationPct,
+      checkedAt: data.checkedAt
+    });
+    this.watchlist = this.watchlist.slice(0, 20);
+    this.saveWatchlist();
+    this.renderWatchlist();
+
+    this.pendingRiskSignal = {
+      type: 'risk',
+      title: `Scanned ${mint.slice(0, 6)}...${mint.slice(-4)} — ${data.level.toUpperCase()} risk`,
+      subtitle: data.flags.filter(f => f.severity !== 'ok').map(f => f.label).join(' · ') || 'No major red flags found',
+      timestamp: data.checkedAt,
+      ago: 'just now',
+      riskLevel: data.level
+    };
+    input.value = '';
+  },
+
+  renderTokenCheck(data, el) {
+    const flagsHtml = data.flags.map(f => `
+      <div class="flag-item">
+        <span class="flag-dot ${f.severity}"></span>
+        <span class="flag-text">${f.label}</span>
+      </div>
+    `).join('');
+    const marketHtml = data.market ? `
+      <div class="market-line">$${data.market.liquidityUsd.toLocaleString()} liquidity · $${data.market.volume24h.toLocaleString()} 24h vol · via ${data.market.dexId}</div>
+    ` : '';
+    el.innerHTML = `
+      <div class="token-check-card">
+        <div class="mint">${data.mint}</div>
+        <span class="risk-badge ${data.level}">${data.level} risk</span>
+        ${marketHtml}
+        <div class="flag-list">${flagsHtml}</div>
+      </div>
+    `;
+  },
+
+  renderWatchlist() {
+    const el = document.getElementById('watchlist');
+    if (this.watchlist.length === 0) {
+      el.innerHTML = '<div class="empty-note">No tokens scanned yet.</div>';
+      return;
+    }
+    el.innerHTML = this.watchlist.map(w => {
+      const short = w.mint.slice(0, 6) + '...' + w.mint.slice(-4);
+      const ago = this.timeAgo(w.checkedAt);
+      return `
+        <div class="watchlist-card">
+          <div class="wl-top">
+            <span class="wl-mint">${short}</span>
+            <span class="risk-badge ${w.level}">${w.level}</span>
+          </div>
+          <div class="wl-time">${ago}</div>
+        </div>
+      `;
+    }).join('');
+  },
+
+  timeAgo(iso) {
+    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
   },
 
   loadWallets() {
@@ -88,7 +196,8 @@ const app = {
       const allSignals = [
         ...walletSignals,
         ...(redditData.signals || []),
-        ...(newsData.news || [])
+        ...(newsData.news || []),
+        ...(this.pendingRiskSignal ? [this.pendingRiskSignal] : [])
       ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
       this.renderSignals(allSignals);
@@ -149,16 +258,19 @@ const app = {
       log.innerHTML = '<div class="empty-note">No signals yet. Add a wallet or check back shortly.</div>';
       return;
     }
-    log.innerHTML = signals.slice(0, 25).map(s => `
-      <div class="signal-row">
-        <span class="signal-tag ${s.type}">${s.type}</span>
-        <div class="signal-body">
-          <div class="signal-title">${s.title}</div>
-          <div class="signal-sub">${s.subtitle || ''}</div>
+    log.innerHTML = signals.slice(0, 25).map(s => {
+      const tagClass = s.type === 'risk' ? `risk-${s.riskLevel}` : s.type;
+      return `
+        <div class="signal-row">
+          <span class="signal-tag ${tagClass}">${s.type === 'risk' ? 'scan' : s.type}</span>
+          <div class="signal-body">
+            <div class="signal-title">${s.title}</div>
+            <div class="signal-sub">${s.subtitle || ''}</div>
+          </div>
+          <div class="signal-time">${s.ago || ''}</div>
         </div>
-        <div class="signal-time">${s.ago || ''}</div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   },
 
   renderTrends(trends) {
