@@ -43,6 +43,14 @@
       </div>
       <div id="walletList"></div>
       <div class="placeholder-note">Wallets persist in this browser only. Activity refreshes every 5 minutes.</div>
+
+      <div class="section-label" style="margin-top:28px;">Check a Solana token</div>
+      <div class="wallet-form">
+        <input type="text" id="tokenInput" placeholder="token mint address">
+        <button onclick="app.checkToken()">Scan</button>
+      </div>
+      <div id="tokenCheckResult"></div>
+      <div class="placeholder-note">Checks mint/freeze authority and top-holder concentration. Not financial advice — always verify independently.</div>
     </div>
 
     <div class="col">
@@ -51,6 +59,10 @@
     </div>
 
     <div class="col">
+      <div class="section-label">Watchlist</div>
+      <div id="watchlist"></div>
+      <div class="placeholder-note" style="margin-bottom:24px;">Tokens you've scanned. Cleared per browser.</div>
+
       <div class="section-label">Trending now</div>
       <div id="trendList"></div>
       <div class="placeholder-note">Pulled from Reddit and free crypto news feeds.</div>
