@@ -64,6 +64,31 @@ netlify/functions/   serverless functions, one per data source
   news.js               News + trend signals (CoinDesk/Cointelegraph RSS, no key)
 ```
 
+## Stage 2: Token risk scanner (Solana)
+
+Paste a Solana token mint address into "Check a Solana token" to scan it for:
+- Active mint authority (deployer can create unlimited new tokens)
+- Active freeze authority (deployer can block holders from selling)
+- Top-10 holder concentration (how much supply a few wallets control)
+- Token-2022 "backdoor" extensions — permanent delegate, transfer hook,
+  transfer fee, default frozen state (Solana's closest equivalent to a
+  malicious smart contract function, since standard SPL tokens don't have
+  custom bytecode the way Ethereum contracts do)
+- Liquidity depth (via DexScreener, free, no key) — thin liquidity means
+  a token is easy to manipulate or rug
+- Volume-to-liquidity ratio and buy/sell skew — flags potential wash
+  trading or one-sided activity
+
+Results appear as a risk badge (low/medium/high) in the token check panel,
+get logged to the signal log, and are saved to your Watchlist panel. Uses
+the same Helius key already configured, plus DexScreener's free public API
+— no additional API key needed for either.
+
+This is a heuristic check, not a guarantee. It doesn't catch every scam
+pattern (e.g. some honeypot contracts still allow selling for the deployer
+while trapping other holders in ways this scan doesn't detect). Always
+treat it as one input, not a final answer.
+
 ## Notes
 
 - Watched wallet addresses are stored in the browser only (localStorage),
