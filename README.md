@@ -1,7 +1,8 @@
 # J7Tracker
 
-Tracks wallet activity across Ethereum, Robinhood Chain, and Solana, plus
-crypto trend signals from Reddit and free news RSS feeds. Read-only — no
+Tracks wallet activity across Ethereum, Robinhood Chain, and Solana, scans
+Solana tokens for rug/scam risk, pulls crypto and world news, and includes
+a voice-enabled AI assistant grounded in your live data. Read-only — no
 funds are held or moved by this app.
 
 ## Setup
@@ -17,40 +18,69 @@ funds are held or moved by this app.
    ```
 
 3. **Get your API keys:**
+   - **Etherscan** (Ethereum tracking) — etherscan.io/myapikey
+   - **Helius** (Solana tracking + token risk scans) — helius.dev
+   - **Groq** (chat assistant) — console.groq.com
+   - **Reddit** (optional, trend tracking) — reddit.com/prefs/apps, create a
+     "script" app, no cost
+   - News (crypto + world) — no key needed, free RSS feeds
+   - Robinhood Chain — no key needed, free Blockscout explorer API
 
-   - **Etherscan** (Ethereum tracking) — sign up at etherscan.io, go to your
-     account, click API Keys, create one.
-   - **Helius** (Solana tracking) — sign up at helius.dev, create a free
-     project, copy the API key from the dashboard.
-   - **Reddit** — no key needed for the public read-only endpoints this app
-     uses.
-   - **Robinhood Chain** — no key needed; it uses the public Blockscout
-     explorer API at robinhoodchain.blockscout.com.
-   - **News** — no key needed; pulls free RSS feeds from CoinDesk and
-     Cointelegraph directly. (CryptoPanic's free API tier was discontinued
-     April 2026, so this app doesn't use it.)
+4. **Copy `.env.example` to `.env`** and fill in your keys.
 
-4. **Copy `.env.example` to `.env`** and fill in your keys:
-   ```
-   cp .env.example .env
-   ```
-
-5. **Run locally:**
-   ```
-   netlify dev
-   ```
-   This starts the site with working Functions at http://localhost:8888.
+5. **Run locally:** `netlify dev` — opens at http://localhost:8888
 
 ## Deploying to Netlify
 
 1. Push this folder to a GitHub repo.
-2. In Netlify: New site from Git, select the repo.
-3. Build settings are already set in `netlify.toml` (publish: `public`,
-   functions: `netlify/functions`) — no changes needed.
-4. In Site settings, Environment variables, add the same keys from your
-   `.env` file (ETHERSCAN_API_KEY, HELIUS_API_KEY). Never commit `.env`
-   to the repo — it's already in `.gitignore`.
-5. Deploy.
+2. Netlify: New site from Git, select the repo. Build settings are already
+   set in `netlify.toml`.
+3. Add your environment variables in Site settings → Environment variables
+   (same keys as your `.env`).
+4. Deploy.
+
+## Homepage layout
+
+- **Greeting + Ask J7 box** — type or speak a question. Combines general
+  crypto knowledge with your live tracked data (wallets, watchlist, news).
+- **Wallets card** — tap to expand: add/remove watched wallets, see recent
+  wallet activity.
+- **Updates card** — tap to expand: trending topics and headlines from
+  crypto news (CoinDesk, Cointelegraph) and world news (BBC, Al Jazeera).
+- **Watchlist card** — tap to expand: scan a Solana token for rug/scam
+  risk, see past scans.
+
+## Voice
+
+- Tap the mic pill in the ask box to speak a question hands-free — it
+  transcribes, sends, and speaks the reply back automatically.
+- Toggle "Listen for 'J7 activate'" to enable a wake word. While the app
+  is open in the browser tab, saying "J7 activate" starts listening for
+  your question automatically — no tap needed.
+- Both use the browser's free built-in Web Speech API (best support in
+  Chrome). No API key needed. Voice quality is functional, not
+  studio-natural — upgrading to a paid engine (e.g. ElevenLabs for
+  speech, Whisper for transcription) is a future option if wanted.
+- Important limitation: this only works while the tab is open and active.
+  Unlike a phone's native "Hey Siri"/"Hey Google", a website cannot listen
+  in the background once the tab or app is closed — that requires OS-level
+  permissions no web app can get.
+
+## Token risk scanner (Solana)
+
+Checks mint authority, freeze authority, Token-2022 backdoor extensions
+(permanent delegate, transfer hook, transfer fee), top-10 holder
+concentration (with pool-vs-wallet detection on the largest holder),
+liquidity depth, and volume/buy-sell patterns via Helius and DexScreener
+(free, no key for DexScreener). Heuristic, not a guarantee — treat as one
+input, not a final answer.
+
+## Chat assistant
+
+Combines general crypto knowledge with your live tracked data — full
+watchlist, up to 50 recent wallet signals, current news and trends — via
+Groq. Won't give direct buy/sell advice; explains risk factors and leaves
+the decision to you.
 
 ## Project structure
 
@@ -60,39 +90,16 @@ netlify/functions/   serverless functions, one per data source
   wallets-eth.js        Ethereum wallet activity (Etherscan)
   wallets-robinhood.js  Robinhood Chain wallet activity (Blockscout)
   wallets-solana.js     Solana wallet activity (Helius)
-  reddit.js             Reddit trend signals
-  news.js               News + trend signals (CoinDesk/Cointelegraph RSS, no key)
+  reddit.js             Reddit trend signals (needs OAuth app credentials)
+  news.js                Crypto + world news (CoinDesk, Cointelegraph, BBC, Al Jazeera RSS, no key)
+  token-risk.js          Solana token risk scanner (Helius + DexScreener)
+  chat.js                 AI assistant grounded in live data (Groq)
 ```
-
-## Stage 2: Token risk scanner (Solana)
-
-Paste a Solana token mint address into "Check a Solana token" to scan it for:
-- Active mint authority (deployer can create unlimited new tokens)
-- Active freeze authority (deployer can block holders from selling)
-- Top-10 holder concentration (how much supply a few wallets control)
-- Token-2022 "backdoor" extensions — permanent delegate, transfer hook,
-  transfer fee, default frozen state (Solana's closest equivalent to a
-  malicious smart contract function, since standard SPL tokens don't have
-  custom bytecode the way Ethereum contracts do)
-- Liquidity depth (via DexScreener, free, no key) — thin liquidity means
-  a token is easy to manipulate or rug
-- Volume-to-liquidity ratio and buy/sell skew — flags potential wash
-  trading or one-sided activity
-
-Results appear as a risk badge (low/medium/high) in the token check panel,
-get logged to the signal log, and are saved to your Watchlist panel. Uses
-the same Helius key already configured, plus DexScreener's free public API
-— no additional API key needed for either.
-
-This is a heuristic check, not a guarantee. It doesn't catch every scam
-pattern (e.g. some honeypot contracts still allow selling for the deployer
-while trapping other holders in ways this scan doesn't detect). Always
-treat it as one input, not a final answer.
 
 ## Notes
 
-- Watched wallet addresses are stored in the browser only (localStorage),
-  not on any server.
+- Watched wallets and scanned tokens are stored in the browser only
+  (localStorage), not on any server.
 - Data refreshes every 5 minutes automatically.
-- This is Stage 1 (tracking only). No wallet with a private key is created
-  or used by this app — it only reads public on-chain and social data.
+- No wallet with a private key is created or used by this app — it only
+  reads public on-chain and social data. No auto-execution/trading.

@@ -2,8 +2,10 @@ const fetch = require('node-fetch');
 
 // Free RSS feeds, no API key or account required.
 const FEEDS = [
-  { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/' },
-  { name: 'Cointelegraph', url: 'https://cointelegraph.com/rss' }
+  { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', category: 'crypto' },
+  { name: 'Cointelegraph', url: 'https://cointelegraph.com/rss', category: 'crypto' },
+  { name: 'BBC World', url: 'https://feeds.bbci.co.uk/news/world/rss.xml', category: 'world' },
+  { name: 'Al Jazeera', url: 'https://www.aljazeera.com/xml/rss/all.xml', category: 'world' }
 ];
 
 const KEYWORDS = [
@@ -20,7 +22,7 @@ function formatAgo(pubDate) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-function parseRssItems(xml, sourceName) {
+function parseRssItems(xml, sourceName, category) {
   const items = [];
   const itemBlocks = xml.split('<item>').slice(1);
   itemBlocks.forEach(block => {
@@ -29,7 +31,7 @@ function parseRssItems(xml, sourceName) {
     if (!titleMatch) return;
     const title = titleMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim();
     const pubDate = dateMatch ? dateMatch[1].trim() : new Date().toUTCString();
-    items.push({ title, source: sourceName, pubDate });
+    items.push({ title, source: sourceName, pubDate, category });
   });
   return items;
 }
@@ -38,7 +40,7 @@ async function getFeedItems(feed) {
   try {
     const res = await fetch(feed.url, { headers: { 'User-Agent': 'J7Tracker/1.0' } });
     const xml = await res.text();
-    return parseRssItems(xml, feed.name).slice(0, 15);
+    return parseRssItems(xml, feed.name, feed.category).slice(0, 15);
   } catch (err) {
     console.error(`RSS fetch failed for ${feed.name}:`, err.message);
     return [];
@@ -68,13 +70,14 @@ exports.handler = async () => {
     allItems.push(...items);
   }
 
-  const trending = extractTrends(allItems);
+  const trending = extractTrends(allItems.filter(i => i.category === 'crypto'));
 
   const news = allItems
     .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
-    .slice(0, 12)
+    .slice(0, 20)
     .map(item => ({
       type: 'news',
+      category: item.category,
       title: item.title,
       subtitle: item.source,
       timestamp: new Date(item.pubDate).toISOString(),

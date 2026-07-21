@@ -42,6 +42,26 @@ async function getTopHolders(mintAddress) {
   return result?.value || [];
 }
 
+async function checkTopHolderType(topHolderTokenAccount) {
+  try {
+    // The token account address holds the tokens; its "owner" field is the
+    // wallet/authority that controls it. Look that wallet up in turn: a
+    // normal user wallet is owned by the System Program, while a pool
+    // authority is typically a PDA owned by the DEX's own program.
+    const accInfo = await rpcCall('getAccountInfo', [topHolderTokenAccount, { encoding: 'jsonParsed' }]);
+    const controllingWallet = accInfo?.value?.data?.parsed?.info?.owner;
+    if (!controllingWallet) return { isLikelyPool: false, controllingWallet: null };
+
+    const walletInfo = await rpcCall('getAccountInfo', [controllingWallet, { encoding: 'base64' }]);
+    const walletOwnerProgram = walletInfo?.value?.owner;
+    const isLikelyPool = walletOwnerProgram && walletOwnerProgram !== '11111111111111111111111111111111';
+    return { isLikelyPool, controllingWallet };
+  } catch (err) {
+    console.error('Top holder type check failed:', err.message);
+    return { isLikelyPool: false, controllingWallet: null };
+  }
+}
+
 async function getMarketData(mintAddress) {
   try {
     const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`);
@@ -82,7 +102,7 @@ function checkExtensions(parsed) {
   return { flags, points };
 }
 
-function computeRisk(parsed, owner, topHolders, market) {
+function computeRisk(parsed, owner, topHolders, market, topHolderType) {
   const flags = [];
   let riskPoints = 0;
 
@@ -128,12 +148,28 @@ function computeRisk(parsed, owner, topHolders, market) {
   const top10Supply = topHolders.slice(0, 10).reduce((sum, h) => sum + parseFloat(h.uiAmountString || h.uiAmount || 0), 0);
   const concentrationPct = totalSupply > 0 ? (top10Supply / totalSupply) * 100 : 0;
 
-  if (concentrationPct > 80) {
-    flags.push({ severity: 'high', label: `Top 10 holders control ${concentrationPct.toFixed(1)}% of visible supply` });
+  if (topHolderType?.isLikelyPool) {
+    flags.push({
+      severity: 'ok',
+      label: 'Largest holder address looks program-controlled (likely the liquidity pool, not a private wallet)'
+    });
+  } else if (topHolderType?.controllingWallet) {
+    flags.push({
+      severity: 'medium',
+      label: 'Largest holder appears to be a regular wallet, not a pool — worth checking manually who controls it'
+    });
+    riskPoints += 10;
+  }
+
+  if (concentrationPct > 90) {
+    flags.push({ severity: 'high', label: `Top 10 holders control ${concentrationPct.toFixed(1)}% of visible supply — extremely concentrated` });
+    riskPoints += 45;
+  } else if (concentrationPct > 70) {
+    flags.push({ severity: 'high', label: `Top 10 holders control ${concentrationPct.toFixed(1)}% of visible supply — high concentration` });
     riskPoints += 30;
   } else if (concentrationPct > 50) {
     flags.push({ severity: 'medium', label: `Top 10 holders control ${concentrationPct.toFixed(1)}% of visible supply` });
-    riskPoints += 15;
+    riskPoints += 20;
   } else {
     flags.push({ severity: 'ok', label: `Top 10 holders control ${concentrationPct.toFixed(1)}% of visible supply` });
   }
@@ -174,8 +210,8 @@ function computeRisk(parsed, owner, topHolders, market) {
   }
 
   let level = 'low';
-  if (riskPoints >= 50) level = 'high';
-  else if (riskPoints >= 20) level = 'medium';
+  if (riskPoints >= 45) level = 'high';
+  else if (riskPoints >= 15) level = 'medium';
 
   return { level, score: riskPoints, flags, concentrationPct, market };
 }
@@ -203,7 +239,11 @@ exports.handler = async (event) => {
       getMarketData(mint)
     ]);
 
-    const risk = computeRisk(parsed, owner, topHolders, market);
+    const topHolderType = topHolders.length > 0
+      ? await checkTopHolderType(topHolders[0].address)
+      : null;
+
+    const risk = computeRisk(parsed, owner, topHolders, market, topHolderType);
 
     return {
       statusCode: 200,

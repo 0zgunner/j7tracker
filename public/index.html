@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>J7Tracker</title>
 <link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#C68A3D">
+<meta name="theme-color" content="#7B5FFF">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -21,15 +21,42 @@
     </div>
   </header>
 
-  <div class="ticker-wrap">
-    <div class="ticker-track" id="ticker"></div>
+  <div class="greeting">
+    <div class="sub">Welcome back</div>
+    <div class="main">What are we<br><span class="grad">tracking today?</span></div>
   </div>
 
-  <div class="layout">
+  <div class="ask-box">
+    <input type="text" id="chatInput" placeholder="Ask J7 anything...">
+    <div class="ask-controls">
+      <button class="voice-pill" id="voiceBtn" onclick="app.toggleVoiceInput()">
+        <i class="mic-icon">&#127908;</i><span id="voiceLabel">voice</span>
+      </button>
+      <button class="send-btn" onclick="app.sendChat()">&#8593;</button>
+    </div>
+  </div>
+  <div class="wake-word-row">
+    <label class="wake-toggle">
+      <input type="checkbox" id="wakeWordToggle" onchange="app.toggleWakeWord(this.checked)">
+      <span>Listen for "J7 activate"</span>
+    </label>
+  </div>
 
-    <div class="col">
-      <div class="section-label">Watched wallets</div>
+  <div class="chat-log" id="chatLog"></div>
 
+  <div class="cards">
+
+    <div class="card" id="walletsCardHeader" onclick="app.toggleSection('wallets')">
+      <div class="card-left">
+        <div class="icon-box icon-amber">&#128188;</div>
+        <div>
+          <div class="card-title">Wallets</div>
+          <div class="card-sub" id="walletsSummary">0 watched</div>
+        </div>
+      </div>
+      <i class="chevron" id="walletsChevron">&#8250;</i>
+    </div>
+    <div class="card-body" id="walletsBody" style="display:none;">
       <div class="chain-select">
         <select id="chainSelect">
           <option value="ethereum">Ethereum</option>
@@ -37,35 +64,51 @@
           <option value="solana">Solana</option>
         </select>
       </div>
-      <div class="wallet-form">
+      <div class="inline-form">
         <input type="text" id="walletInput" placeholder="wallet address">
         <button onclick="app.addWallet()">Add</button>
       </div>
       <div id="walletList"></div>
-      <div class="placeholder-note">Wallets persist in this browser only. Activity refreshes every 5 minutes.</div>
+      <div class="section-label" style="margin-top:16px;">Wallet activity</div>
+      <div id="walletSignalLog"></div>
+    </div>
 
-      <div class="section-label" style="margin-top:28px;">Check a Solana token</div>
-      <div class="wallet-form">
-        <input type="text" id="tokenInput" placeholder="token mint address">
+    <div class="card" id="updatesCardHeader" onclick="app.toggleSection('updates')">
+      <div class="card-left">
+        <div class="icon-box icon-blue">&#128276;</div>
+        <div>
+          <div class="card-title">Updates</div>
+          <div class="card-sub" id="updatesSummary">0 new</div>
+        </div>
+      </div>
+      <i class="chevron" id="updatesChevron">&#8250;</i>
+    </div>
+    <div class="card-body" id="updatesBody" style="display:none;">
+      <div class="section-label">Trending</div>
+      <div id="trendList"></div>
+      <div class="section-label" style="margin-top:16px;">Headlines</div>
+      <div id="newsList"></div>
+    </div>
+
+    <div class="card" id="watchlistCardHeader" onclick="app.toggleSection('watchlist')">
+      <div class="card-left">
+        <div class="icon-box icon-purple">&#128737;</div>
+        <div>
+          <div class="card-title">Watchlist</div>
+          <div class="card-sub" id="watchlistSummary">0 scanned</div>
+        </div>
+      </div>
+      <i class="chevron" id="watchlistChevron">&#8250;</i>
+    </div>
+    <div class="card-body" id="watchlistBody" style="display:none;">
+      <div class="inline-form">
+        <input type="text" id="tokenInput" placeholder="Solana token mint address">
         <button onclick="app.checkToken()">Scan</button>
       </div>
       <div id="tokenCheckResult"></div>
-      <div class="placeholder-note">Checks mint/freeze authority and top-holder concentration. Not financial advice — always verify independently.</div>
-    </div>
-
-    <div class="col">
-      <div class="section-label">Signal log</div>
-      <div class="signal-log" id="signalLog"></div>
-    </div>
-
-    <div class="col">
-      <div class="section-label">Watchlist</div>
+      <div class="section-label" style="margin-top:16px;">Scanned tokens</div>
       <div id="watchlist"></div>
-      <div class="placeholder-note" style="margin-bottom:24px;">Tokens you've scanned. Cleared per browser.</div>
-
-      <div class="section-label">Trending now</div>
-      <div id="trendList"></div>
-      <div class="placeholder-note">Pulled from Reddit and free crypto news feeds.</div>
+      <div class="placeholder-note">Not financial advice — always verify independently.</div>
     </div>
 
   </div>
