@@ -47,6 +47,13 @@ const app = {
 
     this.setupSpeechRecognition();
 
+    // On desktop, the Charts panel is a persistent side panel rather than
+    // a collapsed card, so open it by default there. Mobile keeps it
+    // collapsed like the other cards to save space.
+    if (window.innerWidth >= 900) {
+      this.toggleSection('charts');
+    }
+
     await this.refresh();
     setInterval(() => this.refresh(), 5 * 60 * 1000);
 
@@ -164,7 +171,8 @@ const app = {
     this.watchlist.unshift({
       mint: data.mint, level: data.level, score: data.score,
       concentrationPct: data.concentrationPct, checkedAt: data.checkedAt,
-      flags: data.flags, marketCap: data.market?.marketCap || null
+      flags: data.flags, marketCap: data.market?.marketCap || null,
+      pairAddress: data.market?.pairAddress || null
     });
     this.watchlist = this.watchlist.slice(0, 50);
     this.saveWatchlist();
@@ -172,7 +180,8 @@ const app = {
     input.value = '';
 
     this.lastScannedMint = data.mint;
-    this.updateChartTo(data.mint, true);
+    const shortMint = `${data.mint.slice(0, 6)}...${data.mint.slice(-4)}`;
+    this.updateChartTo(data.market?.pairAddress, true, shortMint);
   },
 
   renderTokenCheck(data, el) {
@@ -205,7 +214,7 @@ const app = {
       const short = w.mint.slice(0, 6) + '...' + w.mint.slice(-4);
       const mcap = w.marketCap ? `$${Number(w.marketCap).toLocaleString()} mcap` : '';
       return `
-        <div class="watchlist-card" onclick="app.updateChartTo('${w.mint}', true)" style="cursor:pointer;">
+        <div class="watchlist-card" onclick="app.updateChartTo('${w.pairAddress || ''}', true, '${short}')" style="cursor:pointer;">
           <div class="wl-top"><span class="wl-mint">${short}</span><span class="risk-badge ${w.level}">${w.level}</span></div>
           <div class="wl-time">${mcap ? mcap + ' · ' : ''}${this.timeAgo(w.checkedAt)}</div>
         </div>`;
@@ -221,23 +230,27 @@ const app = {
   },
 
   // ---------- Charts ----------
-  updateChartTo(mint, openSection) {
+  updateChartTo(pairAddress, openSection, label) {
     const frame = document.getElementById('chartFrame');
-    const label = document.getElementById('chartLabel');
+    const labelEl = document.getElementById('chartLabel');
     const summary = document.getElementById('chartsSummary');
-    frame.src = `https://dexscreener.com/solana/${mint}?embed=1&theme=dark&trades=0&info=0`;
-    label.textContent = `${mint.slice(0, 6)}...${mint.slice(-4)}`;
+    if (!pairAddress) {
+      labelEl.textContent = 'No trading pair found for this token yet';
+      summary.textContent = 'No chart';
+      if (openSection) this.openSection('charts');
+      return;
+    }
+    frame.src = `https://dexscreener.com/solana/${pairAddress}?embed=1&theme=dark&trades=0&info=0`;
+    labelEl.textContent = label || 'Token chart';
     summary.textContent = 'Token chart';
-    this.lastScannedMint = mint;
     if (openSection) this.openSection('charts');
   },
 
   resetChartToSolana() {
     const frame = document.getElementById('chartFrame');
-    document.getElementById('chartLabel').textContent = 'General Solana market';
+    document.getElementById('chartLabel').textContent = 'General Solana market (SOL/USDC)';
     document.getElementById('chartsSummary').textContent = 'Solana';
-    frame.src = 'https://dexscreener.com/solana/So11111111111111111111111111111111111111112?embed=1&theme=dark&trades=0&info=0';
-    this.lastScannedMint = null;
+    frame.src = 'https://dexscreener.com/solana/58oqchx4ywmvkdwllzzbi4chocc2fqcuwbkwmihlyqo2?embed=1&theme=dark&trades=0&info=0';
   },
 
   refreshChartFrame() {
@@ -492,15 +505,32 @@ const app = {
         this.appendChatBubble('assistant', `Error: ${data.error}`);
         return;
       }
-      this.appendChatBubble('assistant', data.reply);
-      this.speak(data.reply);
+      const cleanReply = this.stripMarkdown(data.reply);
+      this.appendChatBubble('assistant', cleanReply);
+      this.speak(cleanReply);
       this.chatHistory.push({ role: 'user', content: message });
-      this.chatHistory.push({ role: 'assistant', content: data.reply });
+      this.chatHistory.push({ role: 'assistant', content: cleanReply });
       this.saveChatHistory();
     } catch (err) {
       thinkingEl.remove();
       this.appendChatBubble('assistant', `Error: ${err.message}`);
     }
+  },
+
+  // Safety net: strips markdown symbols even if the model doesn't fully
+  // follow the plain-text instruction, so voice output never reads out
+  // literal asterisks, dashes, colons-as-headers, etc.
+  stripMarkdown(text) {
+    return text
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/\*(.*?)\*/g, '$1')
+      .replace(/^#+\s*/gm, '')
+      .replace(/^[-•]\s+/gm, '')
+      .replace(/^\d+\.\s+/gm, '')
+      .replace(/`{1,3}/g, '')
+      .replace(/\n{2,}/g, '. ')
+      .replace(/\n/g, '. ')
+      .trim();
   },
 
   appendChatBubble(role, text, isThinking = false) {

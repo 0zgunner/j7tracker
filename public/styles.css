@@ -19,7 +19,14 @@ body { background: var(--bg); color: var(--text-primary); font-family: var(--fon
 .app { max-width: 480px; margin: 0 auto; padding-bottom: 40px; }
 
 @media (min-width: 900px) {
-  .app { max-width: 960px; }
+  .app {
+    max-width: 1200px;
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    column-gap: 24px;
+    align-items: start;
+  }
+  .main-column { min-width: 0; }
   header { padding: 24px 0; }
   .greeting { padding: 6px 0 22px; }
   .greeting .main { font-size: 30px; }
@@ -32,6 +39,10 @@ body { background: var(--bg); color: var(--text-primary); font-family: var(--fon
     grid-template-columns: repeat(3, 1fr);
     align-items: start;
     gap: 16px;
+  }
+  .charts-panel {
+    position: sticky;
+    top: 20px;
   }
   .card-group { display: flex; flex-direction: column; gap: 10px; }
 }
@@ -190,6 +201,5 @@ header {
 .signal-buy-tag { font-family: var(--font-mono); font-size: 9px; color: var(--purple); margin-top: 4px; display: inline-block; }
 
 @media (min-width: 900px) {
-  .cards { grid-template-columns: repeat(4, 1fr); }
-  .chart-frame { height: 420px; }
+  .chart-frame { height: 460px; }
 }

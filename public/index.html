@@ -13,6 +13,8 @@
 <body>
 <div class="app">
 
+  <div class="main-column">
+
   <header>
     <div class="wordmark">J7<span>TRACKER</span></div>
     <div class="status">
@@ -122,7 +124,11 @@
     </div>
     </div>
 
-    <div class="card-group">
+  </div>
+
+  </div>
+
+  <div class="charts-panel" id="chartsPanel">
     <div class="card" id="chartsCardHeader" onclick="app.toggleSection('charts')">
       <div class="card-left">
         <div class="icon-box icon-blue">&#128200;</div>
@@ -134,15 +140,14 @@
       <i class="chevron" id="chartsChevron">&#8250;</i>
     </div>
     <div class="card-body" id="chartsBody" style="display:none;">
-      <div class="section-label" id="chartLabel">General Solana market</div>
+      <div class="section-label" id="chartLabel">General Solana market (SOL/USDC)</div>
       <div class="chart-frame-wrap">
-        <iframe id="chartFrame" class="chart-frame" src="https://dexscreener.com/solana/So11111111111111111111111111111111111111112?embed=1&theme=dark&trades=0&info=0" loading="lazy"></iframe>
+        <iframe id="chartFrame" class="chart-frame" src="https://dexscreener.com/solana/58oqchx4ywmvkdwllzzbi4chocc2fqcuwbkwmihlyqo2?embed=1&theme=dark&trades=0&info=0" loading="lazy"></iframe>
       </div>
       <div class="placeholder-note">Scanning a token in Watchlist switches this to that token's chart.</div>
     </div>
-    </div>
-
   </div>
+
 </div>
 
 <script src="/app.js"></script>
