@@ -1,5 +1,12 @@
 const fetch = require('node-fetch');
 
+// Prevents browsers/CDNs from silently serving a stale cached response.
+const NO_CACHE_HEADERS = {
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+  'Pragma': 'no-cache'
+};
+
 const ETHERSCAN_KEY = process.env.ETHERSCAN_API_KEY;
 const ETHERSCAN_URL = 'https://api.etherscan.io/api';
 
@@ -27,6 +34,7 @@ exports.handler = async (event) => {
   if (!ETHERSCAN_KEY) {
     return {
       statusCode: 200,
+      headers: NO_CACHE_HEADERS,
       body: JSON.stringify({ signals: [], error: 'ETHERSCAN_API_KEY not configured' })
     };
   }
@@ -37,7 +45,8 @@ exports.handler = async (event) => {
     .filter(Boolean);
 
   if (addrs.length === 0) {
-    return { statusCode: 200, body: JSON.stringify({ signals: [] }) };
+    return { statusCode: 200,
+ headers: NO_CACHE_HEADERS, body: JSON.stringify({ signals: [] }) };
   }
 
   const signals = [];
@@ -52,8 +61,7 @@ exports.handler = async (event) => {
         type: 'wallet',
         title: `${addr.slice(0, 6)}...${addr.slice(-4)} ${direction} ${valueEth.toFixed(3)} ETH`,
         subtitle: `block ${tx.blockNumber} · gas used ${tx.gasUsed}`,
-        timestamp: new Date(parseInt(tx.timeStamp, 10) * 1000).toISOString(),
-        ago: formatAgo(tx.timeStamp)
+        timestamp: new Date(parseInt(tx.timeStamp, 10) * 1000).toISOString()
       });
     });
   }
@@ -62,6 +70,7 @@ exports.handler = async (event) => {
 
   return {
     statusCode: 200,
+    headers: NO_CACHE_HEADERS,
     body: JSON.stringify({ signals: signals.slice(0, 15) })
   };
 };

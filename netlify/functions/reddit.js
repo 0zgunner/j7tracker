@@ -1,5 +1,12 @@
 const fetch = require('node-fetch');
 
+// Prevents browsers/CDNs from silently serving a stale cached response.
+const NO_CACHE_HEADERS = {
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+  'Pragma': 'no-cache'
+};
+
 const SUBREDDITS = ['CryptoCurrency', 'Bitcoin', 'ethereum', 'solana'];
 const USER_AGENT = process.env.REDDIT_USER_AGENT || 'J7Tracker/1.0 (by /u/j7tracker)';
 const CLIENT_ID = process.env.REDDIT_CLIENT_ID;
@@ -72,6 +79,7 @@ exports.handler = async () => {
   if (!CLIENT_ID || !CLIENT_SECRET) {
     return {
       statusCode: 200,
+      headers: NO_CACHE_HEADERS,
       body: JSON.stringify({
         trends: [], signals: [],
         error: 'REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET not configured'
@@ -103,12 +111,14 @@ exports.handler = async () => {
 
     return {
       statusCode: 200,
+      headers: NO_CACHE_HEADERS,
       body: JSON.stringify({ trends, signals })
     };
   } catch (err) {
     console.error('Reddit handler error:', err.message);
     return {
       statusCode: 200,
+      headers: NO_CACHE_HEADERS,
       body: JSON.stringify({ trends: [], signals: [], error: err.message })
     };
   }

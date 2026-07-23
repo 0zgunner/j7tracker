@@ -6,6 +6,8 @@ const WALLET_ENDPOINTS = {
   solana: 'wallets-solana'
 };
 
+const SECTION_ORDER = ['wallets', 'updates', 'watchlist', 'charts'];
+
 const app = {
   wallets: [],
   watchlist: [],
@@ -13,17 +15,25 @@ const app = {
   walletSignals: [],
   newsItems: [],
   trends: [],
+  trendHistory: [],
+  alerts: [],
   recognition: null,
   wakeRecognition: null,
   isListening: false,
   synth: window.speechSynthesis,
-  sectionsOpen: { wallets: false, updates: false, watchlist: false },
+  sectionsOpen: { wallets: false, updates: false, watchlist: false, charts: false },
+  lastScannedMint: null,
 
   async init() {
     this.loadWallets();
     this.renderWallets();
     this.loadWatchlist();
     this.renderWatchlist();
+    this.loadChatHistory();
+    this.renderChatHistory();
+    this.loadTrendHistory();
+    this.loadAlerts();
+    this.renderAlerts();
 
     document.getElementById('chatInput').addEventListener('keypress', e => {
       if (e.key === 'Enter') this.sendChat();
@@ -39,6 +49,14 @@ const app = {
 
     await this.refresh();
     setInterval(() => this.refresh(), 5 * 60 * 1000);
+
+    // Keep displayed "time ago" labels accurate without needing a full
+    // refetch - re-render from cached data every 30s.
+    setInterval(() => {
+      this.renderWalletSignals();
+      this.renderNews();
+      this.renderWatchlist();
+    }, 30 * 1000);
   },
 
   toggleSection(name) {
@@ -46,6 +64,31 @@ const app = {
     this.sectionsOpen[name] = !isOpen;
     document.getElementById(`${name}Body`).style.display = isOpen ? 'none' : 'block';
     document.getElementById(`${name}Chevron`).classList.toggle('open', !isOpen);
+    if (name === 'charts' && !isOpen) this.refreshChartFrame();
+  },
+
+  openSection(name) {
+    if (!this.sectionsOpen[name]) this.toggleSection(name);
+  },
+
+  cycleNextSection() {
+    const currentlyOpen = SECTION_ORDER.find(s => this.sectionsOpen[s]);
+    const currentIdx = currentlyOpen ? SECTION_ORDER.indexOf(currentlyOpen) : -1;
+    const nextIdx = (currentIdx + 1) % SECTION_ORDER.length;
+    if (currentlyOpen) this.toggleSection(currentlyOpen);
+    this.toggleSection(SECTION_ORDER[nextIdx]);
+    document.getElementById(`${SECTION_ORDER[nextIdx]}CardHeader`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+  },
+
+  clearLogs() {
+    this.chatHistory = [];
+    localStorage.removeItem('j7t_chat_history');
+    document.getElementById('chatLog').innerHTML = '';
+    this.walletSignals = [];
+    this.renderWalletSignals();
+    this.alerts = [];
+    this.saveAlerts();
+    this.renderAlerts();
   },
 
   // ---------- Wallets ----------
@@ -104,9 +147,9 @@ const app = {
   },
   saveWatchlist() { localStorage.setItem('j7t_watchlist', JSON.stringify(this.watchlist)); },
 
-  async checkToken() {
+  async checkToken(prefilledMint) {
     const input = document.getElementById('tokenInput');
-    const mint = input.value.trim();
+    const mint = prefilledMint || input.value.trim();
     if (!mint) return;
     const resultEl = document.getElementById('tokenCheckResult');
     resultEl.innerHTML = '<div class="empty-note">Scanning...</div>';
@@ -121,19 +164,25 @@ const app = {
     this.watchlist.unshift({
       mint: data.mint, level: data.level, score: data.score,
       concentrationPct: data.concentrationPct, checkedAt: data.checkedAt,
-      flags: data.flags
+      flags: data.flags, marketCap: data.market?.marketCap || null
     });
     this.watchlist = this.watchlist.slice(0, 50);
     this.saveWatchlist();
     this.renderWatchlist();
     input.value = '';
+
+    this.lastScannedMint = data.mint;
+    this.updateChartTo(data.mint, true);
   },
 
   renderTokenCheck(data, el) {
     const flagsHtml = data.flags.map(f => `
       <div class="flag-item"><span class="flag-dot ${f.severity}"></span><span class="flag-text">${f.label}</span></div>
     `).join('');
+    const mcapLine = data.market?.marketCap
+      ? `<div class="market-line">Market cap: $${Number(data.market.marketCap).toLocaleString()}</div>` : '';
     const marketHtml = data.market ? `
+      ${mcapLine}
       <div class="market-line">$${data.market.liquidityUsd.toLocaleString()} liquidity · $${data.market.volume24h.toLocaleString()} 24h vol · via ${data.market.dexId}</div>
     ` : '';
     el.innerHTML = `
@@ -154,10 +203,11 @@ const app = {
     }
     el.innerHTML = this.watchlist.map(w => {
       const short = w.mint.slice(0, 6) + '...' + w.mint.slice(-4);
+      const mcap = w.marketCap ? `$${Number(w.marketCap).toLocaleString()} mcap` : '';
       return `
-        <div class="watchlist-card">
+        <div class="watchlist-card" onclick="app.updateChartTo('${w.mint}', true)" style="cursor:pointer;">
           <div class="wl-top"><span class="wl-mint">${short}</span><span class="risk-badge ${w.level}">${w.level}</span></div>
-          <div class="wl-time">${this.timeAgo(w.checkedAt)}</div>
+          <div class="wl-time">${mcap ? mcap + ' · ' : ''}${this.timeAgo(w.checkedAt)}</div>
         </div>`;
     }).join('');
   },
@@ -168,6 +218,103 @@ const app = {
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     return `${Math.floor(diff / 86400)}d ago`;
+  },
+
+  // ---------- Charts ----------
+  updateChartTo(mint, openSection) {
+    const frame = document.getElementById('chartFrame');
+    const label = document.getElementById('chartLabel');
+    const summary = document.getElementById('chartsSummary');
+    frame.src = `https://dexscreener.com/solana/${mint}?embed=1&theme=dark&trades=0&info=0`;
+    label.textContent = `${mint.slice(0, 6)}...${mint.slice(-4)}`;
+    summary.textContent = 'Token chart';
+    this.lastScannedMint = mint;
+    if (openSection) this.openSection('charts');
+  },
+
+  resetChartToSolana() {
+    const frame = document.getElementById('chartFrame');
+    document.getElementById('chartLabel').textContent = 'General Solana market';
+    document.getElementById('chartsSummary').textContent = 'Solana';
+    frame.src = 'https://dexscreener.com/solana/So11111111111111111111111111111111111111112?embed=1&theme=dark&trades=0&info=0';
+    this.lastScannedMint = null;
+  },
+
+  refreshChartFrame() {
+    // No-op placeholder in case future logic needs to force-reload on open
+  },
+
+  // ---------- Alerts ----------
+  loadAlerts() {
+    try {
+      const stored = localStorage.getItem('j7t_alerts');
+      this.alerts = stored ? JSON.parse(stored) : [];
+    } catch { this.alerts = []; }
+  },
+  saveAlerts() { localStorage.setItem('j7t_alerts', JSON.stringify(this.alerts.slice(0, 20))); },
+
+  addAlert(text) {
+    this.alerts.unshift({ id: Date.now() + Math.random(), text, at: new Date().toISOString() });
+    this.saveAlerts();
+    this.renderAlerts();
+  },
+
+  dismissAlert(id) {
+    this.alerts = this.alerts.filter(a => a.id !== id);
+    this.saveAlerts();
+    this.renderAlerts();
+  },
+
+  renderAlerts() {
+    const banner = document.getElementById('alertsBanner');
+    const list = document.getElementById('alertsList');
+    if (this.alerts.length === 0) {
+      banner.style.display = 'none';
+      return;
+    }
+    banner.style.display = 'block';
+    list.innerHTML = this.alerts.slice(0, 8).map(a => `
+      <div class="alert-item">
+        <span>${a.text}</span>
+        <button class="alert-dismiss" onclick="app.dismissAlert(${a.id})">&times;</button>
+      </div>`).join('');
+  },
+
+  // Re-checks the few most recently scanned watchlist tokens each refresh
+  // cycle and raises an in-app alert if their risk level has changed since
+  // last time. Capped to a small number to keep API usage reasonable.
+  async checkWatchlistForRiskChanges() {
+    const toRecheck = this.watchlist.slice(0, 3);
+    for (const entry of toRecheck) {
+      const data = await this.fetchJson('token-risk', { mint: entry.mint });
+      if (data.error || !data.level) continue;
+      if (data.level !== entry.level) {
+        const short = entry.mint.slice(0, 6) + '...' + entry.mint.slice(-4);
+        this.addAlert(`${short} risk changed: ${entry.level} → ${data.level}`);
+        entry.level = data.level;
+        entry.score = data.score;
+        entry.checkedAt = data.checkedAt;
+      }
+    }
+    this.saveWatchlist();
+    this.renderWatchlist();
+  },
+
+  // ---------- Trend history (for time-based synthesis in chat) ----------
+  loadTrendHistory() {
+    try {
+      const stored = localStorage.getItem('j7t_trend_history');
+      this.trendHistory = stored ? JSON.parse(stored) : [];
+    } catch { this.trendHistory = []; }
+  },
+
+  saveTrendSnapshot(trends) {
+    if (!trends || trends.length === 0) return;
+    this.trendHistory.push({ at: new Date().toISOString(), trends: trends.slice(0, 8) });
+    // Keep a bounded but useful window - roughly the last couple of days
+    // at a 5-minute refresh cadence would be too much, so sample sparsely.
+    this.trendHistory = this.trendHistory.slice(-100);
+    localStorage.setItem('j7t_trend_history', JSON.stringify(this.trendHistory));
   },
 
   // ---------- Refresh: wallets, news, trends ----------
@@ -186,9 +333,13 @@ const app = {
       this.trends = newsData.trending || [];
       this.renderNews();
       this.renderTrends();
+      this.saveTrendSnapshot(this.trends);
 
       document.getElementById('updatesSummary').textContent = `${this.newsItems.length} new`;
       this.setStatus(true, 'LIVE');
+
+      // Don't block the main refresh on alert re-checks
+      this.checkWatchlistForRiskChanges();
     } catch (err) {
       console.error('Refresh failed:', err);
       this.setStatus(false, 'ERROR');
@@ -213,10 +364,11 @@ const app = {
   },
 
   async fetchJson(fnName, params = {}) {
-    const query = new URLSearchParams(params).toString();
+    const bustedParams = { ...params, _t: Date.now() };
+    const query = new URLSearchParams(bustedParams).toString();
     const url = `${API_BASE}/${fnName}${query ? '?' + query : ''}`;
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: 'no-store' });
       return await res.json();
     } catch (err) {
       console.error(`Fetch failed for ${fnName}:`, err.message);
@@ -230,15 +382,21 @@ const app = {
       log.innerHTML = '<div class="empty-note">No wallet activity yet.</div>';
       return;
     }
-    log.innerHTML = this.walletSignals.slice(0, 25).map(s => `
-      <div class="signal-row">
+    log.innerHTML = this.walletSignals.slice(0, 25).map(s => {
+      const tappable = !!s.boughtMint;
+      const clickAttr = tappable ? `onclick="app.checkToken('${s.boughtMint}'); app.openSection('watchlist');"` : '';
+      const buyTag = tappable ? `<span class="signal-buy-tag">tap to scan this token &rarr;</span>` : '';
+      return `
+      <div class="signal-row ${tappable ? 'tappable' : ''}" ${clickAttr}>
         <span class="signal-tag wallet">wallet</span>
         <div style="flex:1;">
           <div class="signal-title">${s.title}</div>
           <div class="signal-sub">${s.subtitle || ''}</div>
+          ${buyTag}
         </div>
-        <div class="signal-time">${s.ago || ''}</div>
-      </div>`).join('');
+        <div class="signal-time">${this.timeAgo(s.timestamp)}</div>
+      </div>`;
+    }).join('');
   },
 
   renderNews() {
@@ -251,7 +409,7 @@ const app = {
       <div class="news-item">
         <span class="cat ${n.category}">${n.category}</span>
         <div class="title">${n.title}</div>
-        <div class="meta">${n.subtitle} · ${n.ago}</div>
+        <div class="meta">${n.subtitle} · ${this.timeAgo(n.timestamp)}</div>
       </div>`).join('');
   },
 
@@ -275,7 +433,27 @@ const app = {
     document.getElementById('statusText').textContent = label;
   },
 
-  // ---------- Chat (with full history/context) ----------
+  // ---------- Chat persistence ----------
+  loadChatHistory() {
+    try {
+      const stored = localStorage.getItem('j7t_chat_history');
+      this.chatHistory = stored ? JSON.parse(stored) : [];
+    } catch { this.chatHistory = []; }
+  },
+
+  saveChatHistory() {
+    const trimmed = this.chatHistory.slice(-60);
+    localStorage.setItem('j7t_chat_history', JSON.stringify(trimmed));
+    this.chatHistory = trimmed;
+  },
+
+  renderChatHistory() {
+    const log = document.getElementById('chatLog');
+    log.innerHTML = '';
+    this.chatHistory.forEach(msg => this.appendChatBubble(msg.role, msg.content));
+  },
+
+  // ---------- Chat (with full history/context + trend history) ----------
   async sendChat(spokenText) {
     const input = document.getElementById('chatInput');
     const message = spokenText || input.value.trim();
@@ -285,12 +463,20 @@ const app = {
     this.appendChatBubble('user', message);
     const thinkingEl = this.appendChatBubble('assistant', 'Thinking...', true);
 
+    // Condense trend history into a compact time series so the model can
+    // reason about how things have shifted, not just the current snapshot.
+    const trendSeries = this.trendHistory.slice(-20).map(snap => ({
+      at: snap.at,
+      top: snap.trends.slice(0, 4).map(t => `${t.name}(${t.count})`).join(', ')
+    }));
+
     const context = {
       watchedWallets: this.wallets,
       watchlist: this.watchlist,
       walletSignals: this.walletSignals.slice(0, 50),
       newsItems: this.newsItems,
-      trendingTopics: this.trends
+      trendingTopics: this.trends,
+      trendHistoryOverTime: trendSeries
     };
 
     try {
@@ -310,6 +496,7 @@ const app = {
       this.speak(data.reply);
       this.chatHistory.push({ role: 'user', content: message });
       this.chatHistory.push({ role: 'assistant', content: data.reply });
+      this.saveChatHistory();
     } catch (err) {
       thinkingEl.remove();
       this.appendChatBubble('assistant', `Error: ${err.message}`);
@@ -379,7 +566,32 @@ const app = {
     this.synth.speak(utterance);
   },
 
-  // ---------- Wake word ("J7 activate") ----------
+  // ---------- Wake word + voice quick-commands ----------
+  handleWakePhrase(transcript) {
+    if (transcript.includes('j7 portfolio') || transcript.includes('j seven portfolio')) {
+      this.wakeRecognition.stop();
+      this.openSection('wallets');
+      document.getElementById('walletsCardHeader').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return true;
+    }
+    if (transcript.includes('j7 next card') || transcript.includes('j seven next card')) {
+      this.wakeRecognition.stop();
+      this.cycleNextSection();
+      return true;
+    }
+    if (transcript.includes('j7 clear logs') || transcript.includes('j seven clear logs')) {
+      this.wakeRecognition.stop();
+      this.clearLogs();
+      return true;
+    }
+    if (transcript.includes('j7 activate') || transcript.includes('j seven activate')) {
+      this.wakeRecognition.stop();
+      this.toggleVoiceInput();
+      return true;
+    }
+    return false;
+  },
+
   toggleWakeWord(enabled) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
@@ -396,19 +608,26 @@ const app = {
       this.wakeRecognition.onresult = (event) => {
         const last = event.results[event.results.length - 1];
         const transcript = last[0].transcript.toLowerCase();
-        if (transcript.includes('j7 activate') || transcript.includes('j seven activate')) {
-          this.wakeRecognition.stop();
-          this.toggleVoiceInput();
-        }
+        this.handleWakePhrase(transcript);
       };
       this.wakeRecognition.onend = () => {
-        // Restart automatically if still enabled, browsers auto-stop after a while
+        // Restart automatically if still enabled - Chrome frequently ends
+        // the session on silence even in continuous mode. A short delay
+        // avoids "recognition already started" errors on rapid restart.
         if (document.getElementById('wakeWordToggle').checked) {
-          try { this.wakeRecognition.start(); } catch (e) { /* already running */ }
+          setTimeout(() => {
+            if (document.getElementById('wakeWordToggle').checked) {
+              try { this.wakeRecognition.start(); } catch (e) { /* already running */ }
+            }
+          }, 350);
         }
       };
       this.wakeRecognition.onerror = (e) => {
-        console.error('Wake word listener error:', e.error);
+        // 'no-speech' is expected and frequent in continuous mode - not a
+        // real error, just let onend handle the restart.
+        if (e.error !== 'no-speech') {
+          console.error('Wake word listener error:', e.error);
+        }
       };
 
       try { this.wakeRecognition.start(); } catch (e) { console.error(e); }

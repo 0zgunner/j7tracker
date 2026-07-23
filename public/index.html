@@ -44,8 +44,14 @@
 
   <div class="chat-log" id="chatLog"></div>
 
+  <div class="alerts-banner" id="alertsBanner" style="display:none;">
+    <div class="section-label">Alerts</div>
+    <div id="alertsList"></div>
+  </div>
+
   <div class="cards">
 
+    <div class="card-group">
     <div class="card" id="walletsCardHeader" onclick="app.toggleSection('wallets')">
       <div class="card-left">
         <div class="icon-box icon-amber">&#128188;</div>
@@ -72,7 +78,9 @@
       <div class="section-label" style="margin-top:16px;">Wallet activity</div>
       <div id="walletSignalLog"></div>
     </div>
+    </div>
 
+    <div class="card-group">
     <div class="card" id="updatesCardHeader" onclick="app.toggleSection('updates')">
       <div class="card-left">
         <div class="icon-box icon-blue">&#128276;</div>
@@ -89,7 +97,9 @@
       <div class="section-label" style="margin-top:16px;">Headlines</div>
       <div id="newsList"></div>
     </div>
+    </div>
 
+    <div class="card-group">
     <div class="card" id="watchlistCardHeader" onclick="app.toggleSection('watchlist')">
       <div class="card-left">
         <div class="icon-box icon-purple">&#128737;</div>
@@ -109,6 +119,27 @@
       <div class="section-label" style="margin-top:16px;">Scanned tokens</div>
       <div id="watchlist"></div>
       <div class="placeholder-note">Not financial advice — always verify independently.</div>
+    </div>
+    </div>
+
+    <div class="card-group">
+    <div class="card" id="chartsCardHeader" onclick="app.toggleSection('charts')">
+      <div class="card-left">
+        <div class="icon-box icon-blue">&#128200;</div>
+        <div>
+          <div class="card-title">Charts</div>
+          <div class="card-sub" id="chartsSummary">Solana</div>
+        </div>
+      </div>
+      <i class="chevron" id="chartsChevron">&#8250;</i>
+    </div>
+    <div class="card-body" id="chartsBody" style="display:none;">
+      <div class="section-label" id="chartLabel">General Solana market</div>
+      <div class="chart-frame-wrap">
+        <iframe id="chartFrame" class="chart-frame" src="https://dexscreener.com/solana/So11111111111111111111111111111111111111112?embed=1&theme=dark&trades=0&info=0" loading="lazy"></iframe>
+      </div>
+      <div class="placeholder-note">Scanning a token in Watchlist switches this to that token's chart.</div>
+    </div>
     </div>
 
   </div>

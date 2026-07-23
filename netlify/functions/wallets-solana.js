@@ -1,6 +1,14 @@
 const fetch = require('node-fetch');
 
+// Prevents browsers/CDNs from silently serving a stale cached response.
+const NO_CACHE_HEADERS = {
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+  'Pragma': 'no-cache'
+};
+
 const HELIUS_KEY = process.env.HELIUS_API_KEY;
+const WRAPPED_SOL_MINT = 'So11111111111111111111111111111111111111112';
 
 function formatAgo(timestampSeconds) {
   const diff = Math.floor(Date.now() / 1000) - timestampSeconds;
@@ -11,7 +19,10 @@ function formatAgo(timestampSeconds) {
 }
 
 async function getWalletTxs(address) {
-  const url = `https://api.helius.xyz/v0/addresses/${address}/transactions?api-key=${HELIUS_KEY}&limit=8`;
+  // Note: Helius's Enhanced Transactions endpoint is in maintenance mode
+  // (no new features, but still functional). If it's ever fully retired,
+  // switch to the getTransactionsForAddress RPC method instead.
+  const url = `https://api-mainnet.helius-rpc.com/v0/addresses/${address}/transactions?api-key=${HELIUS_KEY}&limit=8`;
   try {
     const res = await fetch(url);
     const data = await res.json();
@@ -22,10 +33,23 @@ async function getWalletTxs(address) {
   }
 }
 
+// Pull out the non-SOL token mint the wallet received in this tx, if any -
+// this is what lets the frontend offer a "scan this token" tap on the signal.
+function extractBoughtToken(tx, address) {
+  const transfers = tx.tokenTransfers || [];
+  const received = transfers.find(t =>
+    t.toUserAccount?.toLowerCase() === address.toLowerCase() &&
+    t.mint && t.mint !== WRAPPED_SOL_MINT
+  );
+  if (!received) return null;
+  return { mint: received.mint, amount: received.tokenAmount };
+}
+
 exports.handler = async (event) => {
   if (!HELIUS_KEY) {
     return {
       statusCode: 200,
+      headers: NO_CACHE_HEADERS,
       body: JSON.stringify({ signals: [], error: 'HELIUS_API_KEY not configured' })
     };
   }
@@ -36,7 +60,7 @@ exports.handler = async (event) => {
     .filter(Boolean);
 
   if (addrs.length === 0) {
-    return { statusCode: 200, body: JSON.stringify({ signals: [] }) };
+    return { statusCode: 200, headers: NO_CACHE_HEADERS, body: JSON.stringify({ signals: [] }) };
   }
 
   const signals = [];
@@ -44,13 +68,15 @@ exports.handler = async (event) => {
     const txs = await getWalletTxs(addr);
     txs.forEach(tx => {
       const description = tx.description || `${tx.type || 'transaction'} on Solana`;
+      const bought = extractBoughtToken(tx, addr);
       signals.push({
         chain: 'solana',
         type: 'wallet',
         title: `${addr.slice(0, 4)}...${addr.slice(-4)}: ${description}`,
         subtitle: tx.source ? `via ${tx.source}` : 'Solana mainnet',
         timestamp: new Date(tx.timestamp * 1000).toISOString(),
-        ago: formatAgo(tx.timestamp)
+        boughtMint: bought?.mint || null,
+        boughtAmount: bought?.amount || null
       });
     });
   }
@@ -59,6 +85,7 @@ exports.handler = async (event) => {
 
   return {
     statusCode: 200,
+    headers: NO_CACHE_HEADERS,
     body: JSON.stringify({ signals: signals.slice(0, 15) })
   };
 };

@@ -1,5 +1,12 @@
 const fetch = require('node-fetch');
 
+// Prevents browsers/CDNs from silently serving a stale cached response.
+const NO_CACHE_HEADERS = {
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+  'Pragma': 'no-cache'
+};
+
 // Free RSS feeds, no API key or account required.
 const FEEDS = [
   { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', category: 'crypto' },
@@ -86,6 +93,7 @@ exports.handler = async () => {
 
   return {
     statusCode: 200,
+    headers: NO_CACHE_HEADERS,
     body: JSON.stringify({ news, trending })
   };
 };
