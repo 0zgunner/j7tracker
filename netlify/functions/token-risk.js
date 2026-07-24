@@ -104,13 +104,25 @@ async function getMarketData(mintAddress) {
     if (pairs.length === 0) return null;
     const primary = pairs.reduce((best, p) =>
       (p.liquidity?.usd || 0) > (best.liquidity?.usd || 0) ? p : best, pairs[0]);
+    const dexId = primary.dexId || '';
+    const marketCap = primary.marketCap || primary.fdv || null;
+    // Pump.fun graduates a token to Raydium once its market cap hits
+    // roughly $69,000 (~85 SOL). This is a market-cap-based approximation
+    // of bonding curve progress, not a read of the exact on-chain curve
+    // reserve numbers, but it's a close and useful proxy while a token is
+    // still pre-migration.
+    let bondingCurveProgress = null;
+    if (dexId.toLowerCase().includes('pump') && marketCap) {
+      bondingCurveProgress = Math.min(100, (marketCap / 69000) * 100);
+    }
     return {
       liquidityUsd: primary.liquidity?.usd || 0,
       volume24h: primary.volume?.h24 || 0,
       buys24h: primary.txns?.h24?.buys || 0,
       sells24h: primary.txns?.h24?.sells || 0,
       priceUsd: primary.priceUsd,
-      marketCap: primary.marketCap || primary.fdv || null,
+      marketCap,
+      bondingCurveProgress,
       dexId: primary.dexId,
       pairAddress: primary.pairAddress,
       chainId: primary.chainId,
@@ -282,6 +294,14 @@ function computeRisk(parsed, owner, topHolders, market, topHolderType, bundleChe
     } else {
       flags.push({ severity: 'ok', label: 'No obvious cluster of fresh/bundled wallets among top holders' });
     }
+  }
+
+  if (market?.bondingCurveProgress !== null && market?.bondingCurveProgress !== undefined) {
+    const pct = market.bondingCurveProgress;
+    flags.push({
+      severity: 'ok',
+      label: `Bonding curve progress: ${pct.toFixed(1)}% toward Pump.fun graduation (~$69k market cap)`
+    });
   }
 
   if (liquidityLock) {

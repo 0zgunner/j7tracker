@@ -180,3 +180,52 @@ silence even with auto-restart logic in place (a documented Web Speech
 API quirk, more pronounced on Android Chrome than desktop). The restart
 logic has been tightened with a short delay to reduce this, but it may
 still occasionally need re-toggling if it goes quiet for a while.
+
+## Hub-style desktop layout
+
+Desktop (≥900px) now opens to a hub view — Wallets, Updates, Watchlist,
+and Charts shown as connected nodes radiating from a central circle
+reserved for Stage 3 (locked, "Reserved" - nothing lives there yet).
+Tapping a node fades the hub out and that section takes over full width,
+with a "Back to overview" button to return. Mobile is unaffected — it
+keeps the original stacked, collapsible card layout, since there isn't
+room for a hub layout on a narrow screen.
+
+## Voice system rewrite (real bug fix)
+
+Previously the wake word and the manual voice button used two separate
+SpeechRecognition instances. Browsers generally only allow one active
+recognition session at a time, so whichever one grabbed the microphone
+first silently blocked the other — this was the actual cause of both
+being unreliable together. Now there's a single shared recognition
+instance with a mode flag ('idle' / 'wake' / 'command') that properly
+hands off between wake-listening and one-off voice commands. Recognition
+errors (e.g. denied microphone permission) now show a real alert instead
+of failing silently, so if voice still doesn't work after this update,
+the browser will tell you why.
+
+## Chat grounding fixes
+
+- The chat assistant now receives a live SOL/USD price fetched fresh on
+  every refresh (via a new price.js function, free DexScreener data, no
+  key) and is explicitly instructed to only state prices that are in
+  that live data — not to guess from its own training memory, which was
+  the cause of it stating a wildly wrong SOL price before.
+- Watchlist entries are now explicitly framed to the model as "as of
+  when scanned," not current, to avoid it treating old scan data as live.
+- Rewritten as an "elite Solana quantitative risk analyst" persona,
+  prioritizing liquidity ratios, holder concentration, bonding curve
+  progress, and volume/liquidity spikes in its reasoning.
+- Token risk scans now include bonding curve progress for Pump.fun
+  tokens (approximated from market cap vs. the ~$69k/85 SOL graduation
+  threshold — a close proxy, not an exact read of on-chain curve
+  reserves), which the chat assistant can also reference.
+
+## Chart embed fix
+
+The chart was stuck on "Loading pair..." because the embed was given a
+raw token mint address instead of an actual trading pair address, which
+DexScreener's widget needs to resolve. Fixed: the general Solana chart
+now uses a real, established SOL/USDC pair, and per-token charts use the
+pair address already returned by the token risk scan instead of the
+mint.

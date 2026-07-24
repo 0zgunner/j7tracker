@@ -51,9 +51,73 @@
     <div id="alertsList"></div>
   </div>
 
+  <!-- Desktop hub view: decorative selector, replaced by the real sections below on tap -->
+  <div class="hub-view" id="hubView" style="display:none;">
+    <svg viewBox="0 0 420 420">
+      <path d="M 66 66 Q 140 90 210 210" class="hub-line hub-line-a"/>
+      <path d="M 354 66 Q 280 90 210 210" class="hub-line hub-line-b"/>
+      <path d="M 66 340 Q 140 300 210 210" class="hub-line hub-line-a"/>
+      <path d="M 354 340 Q 280 300 210 210" class="hub-line hub-line-b"/>
+    </svg>
+
+    <div class="hub-center">
+      <div class="lock">&#128274;</div>
+      <div class="label">STAGE 3</div>
+      <div class="sub">Reserved</div>
+    </div>
+
+    <button class="hub-node n-wallets" onclick="app.openHubSection('wallets')">
+      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+      <div class="icon-row">
+        <div class="icon icon-amber">&#128188;</div>
+        <div>
+          <div class="title">Wallets</div>
+          <div class="sub" id="hubWalletsSummary">0 watched</div>
+        </div>
+      </div>
+    </button>
+
+    <button class="hub-node n-updates" onclick="app.openHubSection('updates')">
+      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+      <div class="icon-row">
+        <div class="icon icon-blue">&#128276;</div>
+        <div>
+          <div class="title">Updates</div>
+          <div class="sub" id="hubUpdatesSummary">0 new</div>
+        </div>
+      </div>
+    </button>
+
+    <button class="hub-node n-watchlist" onclick="app.openHubSection('watchlist')">
+      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+      <div class="icon-row">
+        <div class="icon icon-purple">&#128737;</div>
+        <div>
+          <div class="title">Watchlist</div>
+          <div class="sub" id="hubWatchlistSummary">0 scanned</div>
+        </div>
+      </div>
+    </button>
+
+    <button class="hub-node n-charts" onclick="app.openHubSection('charts')">
+      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+      <div class="icon-row">
+        <div class="icon icon-blue">&#128200;</div>
+        <div>
+          <div class="title">Charts</div>
+          <div class="sub" id="hubChartsSummary">Solana</div>
+        </div>
+      </div>
+    </button>
+  </div>
+
+  <div class="hub-back-bar" id="hubBackBar" style="display:none;">
+    <button onclick="app.closeHubDetail()">&larr; Back to overview</button>
+  </div>
+
   <div class="cards">
 
-    <div class="card-group">
+    <div class="card-group" id="walletsGroup">
     <div class="card" id="walletsCardHeader" onclick="app.toggleSection('wallets')">
       <div class="card-left">
         <div class="icon-box icon-amber">&#128188;</div>
@@ -82,7 +146,7 @@
     </div>
     </div>
 
-    <div class="card-group">
+    <div class="card-group" id="updatesGroup">
     <div class="card" id="updatesCardHeader" onclick="app.toggleSection('updates')">
       <div class="card-left">
         <div class="icon-box icon-blue">&#128276;</div>
@@ -101,7 +165,7 @@
     </div>
     </div>
 
-    <div class="card-group">
+    <div class="card-group" id="watchlistGroup">
     <div class="card" id="watchlistCardHeader" onclick="app.toggleSection('watchlist')">
       <div class="card-left">
         <div class="icon-box icon-purple">&#128737;</div>

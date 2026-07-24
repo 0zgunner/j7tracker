@@ -16,10 +16,10 @@ const app = {
   newsItems: [],
   trends: [],
   trendHistory: [],
+  livePrice: null,
   alerts: [],
   recognition: null,
-  wakeRecognition: null,
-  isListening: false,
+  isListening: false, // deprecated, kept only to avoid breaking any stray references
   synth: window.speechSynthesis,
   sectionsOpen: { wallets: false, updates: false, watchlist: false, charts: false },
   lastScannedMint: null,
@@ -47,11 +47,12 @@ const app = {
 
     this.setupSpeechRecognition();
 
-    // On desktop, the Charts panel is a persistent side panel rather than
-    // a collapsed card, so open it by default there. Mobile keeps it
-    // collapsed like the other cards to save space.
-    if (window.innerWidth >= 900) {
-      this.toggleSection('charts');
+    // Desktop starts in hub view (decorative overview, center reserved
+    // for Stage 3). Mobile always shows the normal card list directly -
+    // there's no room for a hub layout on a narrow screen.
+    this.isDesktop = window.innerWidth >= 900;
+    if (this.isDesktop) {
+      this.enterHubMode();
     }
 
     await this.refresh();
@@ -64,6 +65,44 @@ const app = {
       this.renderNews();
       this.renderWatchlist();
     }, 30 * 1000);
+  },
+
+  // ---------- Hub view (desktop only) ----------
+  enterHubMode() {
+    document.getElementById('hubView').style.display = 'block';
+    document.getElementById('hubBackBar').style.display = 'none';
+    ['walletsGroup', 'updatesGroup', 'watchlistGroup', 'chartsPanel'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+  },
+
+  openHubSection(name) {
+    if (!this.isDesktop) { this.openSection(name); return; }
+    document.getElementById('hubView').style.display = 'none';
+    document.getElementById('hubBackBar').style.display = 'flex';
+
+    const groupIds = { wallets: 'walletsGroup', updates: 'updatesGroup', watchlist: 'watchlistGroup', charts: 'chartsPanel' };
+    Object.entries(groupIds).forEach(([key, id]) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = key === name ? 'block' : 'none';
+    });
+
+    this.openSection(name);
+    document.getElementById(`${name}CardHeader`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
+
+  closeHubDetail() {
+    if (!this.isDesktop) return;
+    this.enterHubMode();
+  },
+
+  // Unified entry point other code should use instead of calling
+  // openSection/openHubSection directly, so behavior stays consistent
+  // whether hub mode is active or not.
+  goToSection(name) {
+    if (this.isDesktop) this.openHubSection(name);
+    else this.openSection(name);
   },
 
   toggleSection(name) {
@@ -83,8 +122,12 @@ const app = {
     const currentIdx = currentlyOpen ? SECTION_ORDER.indexOf(currentlyOpen) : -1;
     const nextIdx = (currentIdx + 1) % SECTION_ORDER.length;
     if (currentlyOpen) this.toggleSection(currentlyOpen);
-    this.toggleSection(SECTION_ORDER[nextIdx]);
-    document.getElementById(`${SECTION_ORDER[nextIdx]}CardHeader`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (this.isDesktop) {
+      this.openHubSection(SECTION_ORDER[nextIdx]);
+    } else {
+      this.toggleSection(SECTION_ORDER[nextIdx]);
+      document.getElementById(`${SECTION_ORDER[nextIdx]}CardHeader`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   },
 
   clearLogs() {
@@ -129,6 +172,7 @@ const app = {
   renderWallets() {
     const list = document.getElementById('walletList');
     document.getElementById('walletsSummary').textContent = `${this.wallets.length} watched`;
+    document.getElementById('hubWalletsSummary').textContent = `${this.wallets.length} watched`;
     if (this.wallets.length === 0) {
       list.innerHTML = '<div class="empty-note">No wallets added yet.</div>';
       return;
@@ -206,6 +250,7 @@ const app = {
   renderWatchlist() {
     const el = document.getElementById('watchlist');
     document.getElementById('watchlistSummary').textContent = `${this.watchlist.length} scanned`;
+    document.getElementById('hubWatchlistSummary').textContent = `${this.watchlist.length} scanned`;
     if (this.watchlist.length === 0) {
       el.innerHTML = '<div class="empty-note">No tokens scanned yet.</div>';
       return;
@@ -234,22 +279,26 @@ const app = {
     const frame = document.getElementById('chartFrame');
     const labelEl = document.getElementById('chartLabel');
     const summary = document.getElementById('chartsSummary');
+    const hubSummary = document.getElementById('hubChartsSummary');
     if (!pairAddress) {
       labelEl.textContent = 'No trading pair found for this token yet';
       summary.textContent = 'No chart';
-      if (openSection) this.openSection('charts');
+      if (hubSummary) hubSummary.textContent = 'No chart';
+      if (openSection) this.goToSection('charts');
       return;
     }
     frame.src = `https://dexscreener.com/solana/${pairAddress}?embed=1&theme=dark&trades=0&info=0`;
     labelEl.textContent = label || 'Token chart';
     summary.textContent = 'Token chart';
-    if (openSection) this.openSection('charts');
+    if (hubSummary) hubSummary.textContent = 'Token chart';
+    if (openSection) this.goToSection('charts');
   },
 
   resetChartToSolana() {
     const frame = document.getElementById('chartFrame');
     document.getElementById('chartLabel').textContent = 'General Solana market (SOL/USDC)';
     document.getElementById('chartsSummary').textContent = 'Solana';
+    document.getElementById('hubChartsSummary').textContent = 'Solana';
     frame.src = 'https://dexscreener.com/solana/58oqchx4ywmvkdwllzzbi4chocc2fqcuwbkwmihlyqo2?embed=1&theme=dark&trades=0&info=0';
   },
 
@@ -334,9 +383,10 @@ const app = {
   async refresh() {
     this.setStatus(true, 'SYNCING');
     try {
-      const [walletSignals, newsData] = await Promise.all([
+      const [walletSignals, newsData, priceData] = await Promise.all([
         this.fetchWalletSignals(),
-        this.fetchJson('news')
+        this.fetchJson('news'),
+        this.fetchJson('price')
       ]);
 
       this.walletSignals = walletSignals.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -348,7 +398,12 @@ const app = {
       this.renderTrends();
       this.saveTrendSnapshot(this.trends);
 
+      if (priceData && !priceData.error) {
+        this.livePrice = priceData;
+      }
+
       document.getElementById('updatesSummary').textContent = `${this.newsItems.length} new`;
+      document.getElementById('hubUpdatesSummary').textContent = `${this.newsItems.length} new`;
       this.setStatus(true, 'LIVE');
 
       // Don't block the main refresh on alert re-checks
@@ -397,7 +452,7 @@ const app = {
     }
     log.innerHTML = this.walletSignals.slice(0, 25).map(s => {
       const tappable = !!s.boughtMint;
-      const clickAttr = tappable ? `onclick="app.checkToken('${s.boughtMint}'); app.openSection('watchlist');"` : '';
+      const clickAttr = tappable ? `onclick="app.checkToken('${s.boughtMint}'); app.goToSection('watchlist');"` : '';
       const buyTag = tappable ? `<span class="signal-buy-tag">tap to scan this token &rarr;</span>` : '';
       return `
       <div class="signal-row ${tappable ? 'tappable' : ''}" ${clickAttr}>
@@ -484,6 +539,7 @@ const app = {
     }));
 
     const context = {
+      livePrice: this.livePrice,
       watchedWallets: this.wallets,
       watchlist: this.watchlist,
       walletSignals: this.walletSignals.slice(0, 50),
@@ -543,6 +599,16 @@ const app = {
   },
 
   // ---------- Voice input / output ----------
+  // ---------- Voice: single shared recognition instance ----------
+  // Previously this used two separate SpeechRecognition objects (one for
+  // the wake word, one for manual voice input). Browsers generally only
+  // allow one active recognition session at a time, so whichever one
+  // grabbed the mic first silently blocked the other - this was the real
+  // cause of "both mic input and wake word broken." Now there's a single
+  // instance with a mode flag, so they properly hand off to each other.
+  voiceMode: 'idle', // 'idle' | 'wake' | 'command'
+  wakeWordWanted: false,
+
   setupSpeechRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
@@ -550,26 +616,56 @@ const app = {
       return;
     }
     this.recognition = new SR();
-    this.recognition.continuous = false;
-    this.recognition.interimResults = false;
     this.recognition.lang = 'en-US';
 
     this.recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      document.getElementById('chatInput').value = transcript;
-      this.sendChat(transcript);
+      const last = event.results[event.results.length - 1];
+      const transcript = last[0].transcript.toLowerCase();
+
+      if (this.voiceMode === 'wake') {
+        this.handleWakePhrase(transcript);
+      } else if (this.voiceMode === 'command' && last.isFinal) {
+        document.getElementById('chatInput').value = transcript;
+        this.sendChat(transcript);
+      }
     };
+
     this.recognition.onend = () => {
-      this.isListening = false;
+      const wasCommand = this.voiceMode === 'command';
+      this.voiceMode = 'idle';
       document.getElementById('voiceBtn').classList.remove('listening');
       document.getElementById('voiceLabel').textContent = 'voice';
+
+      // Hand back to wake-word listening if it's still wanted and we
+      // just finished a one-off command, or if the session simply ended
+      // on silence while wake mode was active.
+      if (this.wakeWordWanted) {
+        setTimeout(() => this.startWakeListening(), 350);
+      }
     };
+
     this.recognition.onerror = (e) => {
-      console.error('Speech recognition error:', e.error);
-      this.isListening = false;
+      this.voiceMode = 'idle';
       document.getElementById('voiceBtn').classList.remove('listening');
       document.getElementById('voiceLabel').textContent = 'voice';
+
+      if (e.error === 'no-speech') return; // expected/frequent, not a real error
+      if (e.error === 'not-allowed' || e.error === 'permission-denied') {
+        alert('Microphone permission was denied. Check Chrome\'s site settings (tap the lock icon in the address bar) and allow microphone access for this site.');
+      } else if (e.error === 'audio-capture') {
+        alert('No microphone was found on this device.');
+      } else {
+        console.error('Speech recognition error:', e.error);
+      }
     };
+  },
+
+  startWakeListening() {
+    if (!this.recognition || this.voiceMode !== 'idle') return;
+    this.recognition.continuous = true;
+    this.recognition.interimResults = true;
+    this.voiceMode = 'wake';
+    try { this.recognition.start(); } catch (e) { /* already running */ }
   },
 
   toggleVoiceInput() {
@@ -577,14 +673,24 @@ const app = {
       alert('Voice input is not supported in this browser. Try Chrome.');
       return;
     }
-    if (this.isListening) {
+    if (this.voiceMode === 'command') {
       this.recognition.stop();
       return;
     }
-    this.isListening = true;
+    // Stop wake listening first (if active) so the command listener can
+    // take the mic - onend's handoff logic will resume wake mode after.
+    if (this.voiceMode === 'wake') {
+      this.recognition.stop();
+    }
+    this.recognition.continuous = false;
+    this.recognition.interimResults = false;
+    this.voiceMode = 'command';
     document.getElementById('voiceBtn').classList.add('listening');
     document.getElementById('voiceLabel').textContent = 'listening...';
-    this.recognition.start();
+    try { this.recognition.start(); } catch (e) {
+      // If it was mid-stop from wake mode, retry shortly after.
+      setTimeout(() => { try { this.recognition.start(); } catch (e2) { /* ignore */ } }, 300);
+    }
   },
 
   speak(text) {
@@ -593,30 +699,28 @@ const app = {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
+    utterance.onerror = (e) => console.error('Speech synthesis error:', e.error);
     this.synth.speak(utterance);
   },
 
   // ---------- Wake word + voice quick-commands ----------
   handleWakePhrase(transcript) {
     if (transcript.includes('j7 portfolio') || transcript.includes('j seven portfolio')) {
-      this.wakeRecognition.stop();
-      this.openSection('wallets');
+      this.goToSection('wallets');
       document.getElementById('walletsCardHeader').scrollIntoView({ behavior: 'smooth', block: 'center' });
       return true;
     }
     if (transcript.includes('j7 next card') || transcript.includes('j seven next card')) {
-      this.wakeRecognition.stop();
       this.cycleNextSection();
       return true;
     }
     if (transcript.includes('j7 clear logs') || transcript.includes('j seven clear logs')) {
-      this.wakeRecognition.stop();
       this.clearLogs();
       return true;
     }
     if (transcript.includes('j7 activate') || transcript.includes('j seven activate')) {
-      this.wakeRecognition.stop();
-      this.toggleVoiceInput();
+      this.recognition.stop();
+      setTimeout(() => this.toggleVoiceInput(), 200);
       return true;
     }
     return false;
@@ -629,43 +733,11 @@ const app = {
       document.getElementById('wakeWordToggle').checked = false;
       return;
     }
+    this.wakeWordWanted = enabled;
     if (enabled) {
-      this.wakeRecognition = new SR();
-      this.wakeRecognition.continuous = true;
-      this.wakeRecognition.interimResults = true;
-      this.wakeRecognition.lang = 'en-US';
-
-      this.wakeRecognition.onresult = (event) => {
-        const last = event.results[event.results.length - 1];
-        const transcript = last[0].transcript.toLowerCase();
-        this.handleWakePhrase(transcript);
-      };
-      this.wakeRecognition.onend = () => {
-        // Restart automatically if still enabled - Chrome frequently ends
-        // the session on silence even in continuous mode. A short delay
-        // avoids "recognition already started" errors on rapid restart.
-        if (document.getElementById('wakeWordToggle').checked) {
-          setTimeout(() => {
-            if (document.getElementById('wakeWordToggle').checked) {
-              try { this.wakeRecognition.start(); } catch (e) { /* already running */ }
-            }
-          }, 350);
-        }
-      };
-      this.wakeRecognition.onerror = (e) => {
-        // 'no-speech' is expected and frequent in continuous mode - not a
-        // real error, just let onend handle the restart.
-        if (e.error !== 'no-speech') {
-          console.error('Wake word listener error:', e.error);
-        }
-      };
-
-      try { this.wakeRecognition.start(); } catch (e) { console.error(e); }
-    } else {
-      if (this.wakeRecognition) {
-        this.wakeRecognition.onend = null;
-        this.wakeRecognition.stop();
-      }
+      this.startWakeListening();
+    } else if (this.voiceMode === 'wake') {
+      this.recognition.stop();
     }
   }
 };
