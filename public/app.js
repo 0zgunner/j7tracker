@@ -278,15 +278,27 @@ const app = {
       el.innerHTML = '<div class="empty-note">No tokens scanned yet.</div>';
       return;
     }
-    el.innerHTML = this.watchlist.map(w => {
+    el.innerHTML = this.watchlist.map((w, i) => {
       const short = w.mint.slice(0, 6) + '...' + w.mint.slice(-4);
       const mcap = w.marketCap ? `$${Number(w.marketCap).toLocaleString()} mcap` : '';
       return `
-        <div class="watchlist-card" onclick="app.openWatchlistChart('${w.pairAddress || ''}')" style="cursor:pointer;">
-          <div class="wl-top"><span class="wl-mint">${short}</span><span class="risk-badge ${w.level}">${w.level}</span></div>
-          <div class="wl-time">${mcap ? mcap + ' · ' : ''}${this.timeAgo(w.checkedAt)}</div>
+        <div class="watchlist-card">
+          <div class="wl-top">
+            <span class="wl-mint" onclick="app.openWatchlistChart('${w.pairAddress || ''}')" style="cursor:pointer;">${short}</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="risk-badge ${w.level}">${w.level}</span>
+              <button class="remove-btn" onclick="event.stopPropagation(); app.removeFromWatchlist(${i});" title="Remove">&times;</button>
+            </div>
+          </div>
+          <div class="wl-time" onclick="app.openWatchlistChart('${w.pairAddress || ''}')" style="cursor:pointer;">${mcap ? mcap + ' · ' : ''}${this.timeAgo(w.checkedAt)}</div>
         </div>`;
     }).join('');
+  },
+
+  removeFromWatchlist(index) {
+    this.watchlist.splice(index, 1);
+    this.saveWatchlist();
+    this.renderWatchlist();
   },
 
   timeAgo(iso) {
@@ -474,15 +486,18 @@ const app = {
     }
     log.innerHTML = this.walletSignals.slice(0, 25).map(s => {
       const tappable = !!s.boughtMint;
-      const clickAttr = tappable ? `onclick="app.checkToken('${s.boughtMint}'); app.goToSection('watchlist');"` : '';
-      const buyTag = tappable ? `<span class="signal-buy-tag">tap to scan this token &rarr;</span>` : '';
+      const actions = tappable ? `
+        <div class="signal-actions">
+          <button class="signal-action-btn" onclick="event.stopPropagation(); app.checkToken('${s.boughtMint}'); app.goToSection('watchlist');">Analyze risk</button>
+          <button class="signal-action-btn" onclick="event.stopPropagation(); window.open('https://dexscreener.com/solana/${s.boughtMint}', '_blank', 'noopener');">View chart &#8599;</button>
+        </div>` : '';
       return `
-      <div class="signal-row ${tappable ? 'tappable' : ''}" ${clickAttr}>
+      <div class="signal-row">
         <span class="signal-tag wallet">wallet</span>
         <div style="flex:1;">
           <div class="signal-title">${s.title}</div>
           <div class="signal-sub">${s.subtitle || ''}</div>
-          ${buyTag}
+          ${actions}
         </div>
         <div class="signal-time">${this.timeAgo(s.timestamp)}</div>
       </div>`;
