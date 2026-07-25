@@ -20,7 +20,7 @@ body { background: var(--bg); color: var(--text-primary); font-family: var(--fon
 
 @media (min-width: 900px) {
   .app {
-    max-width: 620px;
+    max-width: 1100px;
   }
   header { padding: 24px 0; }
   .ask-box { margin: 0 0 12px; }
@@ -225,6 +225,21 @@ header {
     radial-gradient(circle at 50% 50%, rgba(177,92,255,0.22), rgba(91,140,255,0.10) 45%, transparent 75%),
     var(--panel);
   overflow: hidden;
+}
+
+@media (min-width: 900px) {
+  .hub-view {
+    max-width: min(85vw, 85vh, 1000px);
+  }
+  .hub-node .title { font-size: 15px; }
+  .hub-node .sub { font-size: 12px; }
+  .hub-node .icon { width: 34px; height: 34px; font-size: 18px; }
+  .hub-node .dot { width: 7px; height: 7px; }
+  .hub-center .lock { font-size: 34px; }
+  .hub-center .label { font-size: 16px; }
+  .hub-center .sub { font-size: 12px; }
+  .hub-fab { font-size: 15px; padding: 14px 24px; }
+  .fab-icon { font-size: 19px; }
 }
 .hub-view::before {
   content: '';

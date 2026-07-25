@@ -34,7 +34,7 @@ const app = {
     // gesture, so this may not always play automatically - that's an
     // inherent browser restriction, not a bug. It'll still work fine the
     // moment the user taps anything on the page.
-    this.speak(`${timeGreeting}, Edwin. What are we tracking today?`);
+    this.speak(`${timeGreeting}, Edwin. What do you want us to do?`);
   },
 
   async init() {
