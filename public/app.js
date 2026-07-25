@@ -24,7 +24,18 @@ const app = {
   sectionsOpen: { wallets: false, updates: false, watchlist: false, charts: false },
   lastScannedMint: null,
 
+  setGreeting() {
+    const hour = new Date().getHours();
+    let timeGreeting = 'Good evening';
+    if (hour < 12) timeGreeting = 'Good morning';
+    else if (hour < 18) timeGreeting = 'Good afternoon';
+
+    document.getElementById('greetingSub').textContent = `${timeGreeting} \u{1F44B}`;
+    document.getElementById('greetingMain').innerHTML = 'What can I help<br>you <span class="grad">track today?</span>';
+  },
+
   async init() {
+    this.setGreeting();
     this.loadWallets();
     this.renderWallets();
     this.loadWatchlist();
@@ -130,15 +141,25 @@ const app = {
     }
   },
 
-  clearLogs() {
+  clearChatOnly() {
     this.chatHistory = [];
     localStorage.removeItem('j7t_chat_history');
     document.getElementById('chatLog').innerHTML = '';
+    this.updateChatControlsVisibility();
+  },
+
+  clearLogs() {
+    this.clearChatOnly();
     this.walletSignals = [];
     this.renderWalletSignals();
     this.alerts = [];
     this.saveAlerts();
     this.renderAlerts();
+  },
+
+  updateChatControlsVisibility() {
+    const controls = document.getElementById('chatLogControls');
+    if (controls) controls.style.display = this.chatHistory.length > 0 ? 'flex' : 'none';
   },
 
   // ---------- Wallets ----------
@@ -519,6 +540,7 @@ const app = {
     const log = document.getElementById('chatLog');
     log.innerHTML = '';
     this.chatHistory.forEach(msg => this.appendChatBubble(msg.role, msg.content));
+    this.updateChatControlsVisibility();
   },
 
   // ---------- Chat (with full history/context + trend history) ----------
@@ -567,6 +589,7 @@ const app = {
       this.chatHistory.push({ role: 'user', content: message });
       this.chatHistory.push({ role: 'assistant', content: cleanReply });
       this.saveChatHistory();
+      this.updateChatControlsVisibility();
     } catch (err) {
       thinkingEl.remove();
       this.appendChatBubble('assistant', `Error: ${err.message}`);
@@ -595,6 +618,7 @@ const app = {
     bubble.className = `chat-bubble ${role}${isThinking ? ' thinking' : ''}`;
     bubble.textContent = text;
     log.appendChild(bubble);
+    log.scrollTop = log.scrollHeight;
     return bubble;
   },
 
@@ -672,6 +696,11 @@ const app = {
     if (!this.recognition) {
       alert('Voice input is not supported in this browser. Try Chrome.');
       return;
+    }
+    // Barge-in: if the AI is mid-reply, tapping the mic should interrupt
+    // it immediately rather than talking over the new question.
+    if (this.synth && this.synth.speaking) {
+      this.synth.cancel();
     }
     if (this.voiceMode === 'command') {
       this.recognition.stop();

@@ -92,7 +92,33 @@ header {
 .wake-toggle { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-secondary); cursor: pointer; }
 .wake-toggle input { accent-color: var(--purple); }
 
-.chat-log { padding: 0 20px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.chat-log {
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+.chat-log:empty { display: none; margin-bottom: 0; }
+.chat-log-controls {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 20px 8px;
+}
+.chat-log-controls button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 2px 4px;
+}
+.chat-log-controls button:hover { color: var(--purple); }
 .chat-bubble { max-width: 85%; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.5; }
 .chat-bubble.user { align-self: flex-end; background: linear-gradient(135deg, var(--blue), var(--purple)); color: #fff; }
 .chat-bubble.assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); white-space: pre-wrap; }

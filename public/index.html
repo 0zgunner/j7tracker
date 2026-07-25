@@ -24,8 +24,8 @@
   </header>
 
   <div class="greeting">
-    <div class="sub">Welcome back</div>
-    <div class="main">What are we<br><span class="grad">tracking today?</span></div>
+    <div class="sub" id="greetingSub">Welcome back</div>
+    <div class="main" id="greetingMain">What are we<br><span class="grad">tracking today?</span></div>
   </div>
 
   <div class="ask-box">
@@ -45,6 +45,9 @@
   </div>
 
   <div class="chat-log" id="chatLog"></div>
+  <div class="chat-log-controls" id="chatLogControls" style="display:none;">
+    <button onclick="app.clearChatOnly()">Clear conversation</button>
+  </div>
 
   <div class="alerts-banner" id="alertsBanner" style="display:none;">
     <div class="section-label">Alerts</div>
