@@ -229,3 +229,39 @@ DexScreener's widget needs to resolve. Fixed: the general Solana chart
 now uses a real, established SOL/USDC pair, and per-token charts use the
 pair address already returned by the token risk scan instead of the
 mint.
+
+## Full hub-only homepage redesign
+
+Desktop now opens directly to the hub square — no header text, no
+always-visible ask box or chat log above it. The hub square IS the
+homepage: Wallets, Updates, Watchlist, and Charts as four corner nodes,
+center reserved for Stage 3, and a floating "Ask J7" button anchored to
+the bottom edge of the square for the AI chat. Tapping any node (including
+Ask J7) fades the hub and that section takes over full width, with a
+"Back to overview" button to return - the AI chat now behaves exactly
+like every other section instead of being a separate persistent area.
+
+Mobile keeps the same five sections as stacked, collapsible cards (Ask J7
+first), consistent with the desktop model minus the hub visual.
+
+## Charts: no longer embedded, opens externally
+
+Embedding DexScreener's site directly in an iframe was unreliable - it's
+not built for third-party embedding, and it could hang on "Loading
+pair..." indefinitely instead of failing with a clear error. Charts now
+opens the real DexScreener page in a new browser tab instead - slightly
+more clicks, but it works every time. The Charts section is just a small
+launcher with two buttons: general Solana market, and (once you've
+scanned something) the last scanned token's chart. Watchlist entries are
+also individually clickable to open their chart in a new tab.
+
+## Spoken greeting
+
+On load, the app speaks a time-of-day greeting ("Good afternoon, Edwin.
+What are we tracking today?") instead of displaying it as text - there's
+no more greeting text block on the homepage at all. Note: browsers often
+block audio, including speech synthesis, from playing automatically
+before the user has interacted with the page at all. If the greeting
+doesn't play on first load, that's this browser restriction, not a bug -
+tapping anywhere on the page first (then reloading) or subsequent visits
+in the same session often resolves it.

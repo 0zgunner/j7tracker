@@ -23,38 +23,12 @@
     </div>
   </header>
 
-  <div class="greeting">
-    <div class="sub" id="greetingSub">Welcome back</div>
-    <div class="main" id="greetingMain">What are we<br><span class="grad">tracking today?</span></div>
-  </div>
-
-  <div class="ask-box">
-    <input type="text" id="chatInput" placeholder="Ask J7 anything...">
-    <div class="ask-controls">
-      <button class="voice-pill" id="voiceBtn" onclick="app.toggleVoiceInput()">
-        <i class="mic-icon">&#127908;</i><span id="voiceLabel">voice</span>
-      </button>
-      <button class="send-btn" onclick="app.sendChat()">&#8593;</button>
-    </div>
-  </div>
-  <div class="wake-word-row">
-    <label class="wake-toggle">
-      <input type="checkbox" id="wakeWordToggle" onchange="app.toggleWakeWord(this.checked)">
-      <span>Listen for "J7 activate"</span>
-    </label>
-  </div>
-
-  <div class="chat-log" id="chatLog"></div>
-  <div class="chat-log-controls" id="chatLogControls" style="display:none;">
-    <button onclick="app.clearChatOnly()">Clear conversation</button>
-  </div>
-
   <div class="alerts-banner" id="alertsBanner" style="display:none;">
     <div class="section-label">Alerts</div>
     <div id="alertsList"></div>
   </div>
 
-  <!-- Desktop hub view: decorative selector, replaced by the real sections below on tap -->
+  <!-- Desktop hub view: the whole homepage. Center reserved for Stage 3. -->
   <div class="hub-view" id="hubView" style="display:none;">
     <svg viewBox="0 0 420 420">
       <path d="M 66 66 Q 140 90 210 210" class="hub-line hub-line-a"/>
@@ -112,6 +86,11 @@
         </div>
       </div>
     </button>
+
+    <button class="hub-fab" onclick="app.openHubSection('chat')" title="Ask J7">
+      <span class="fab-icon">&#128172;</span>
+      <span class="fab-label">Ask J7</span>
+    </button>
   </div>
 
   <div class="hub-back-bar" id="hubBackBar" style="display:none;">
@@ -119,6 +98,40 @@
   </div>
 
   <div class="cards">
+
+    <div class="card-group" id="chatGroup">
+    <div class="card" id="chatCardHeader" onclick="app.toggleSection('chat')">
+      <div class="card-left">
+        <div class="icon-box icon-purple">&#128172;</div>
+        <div>
+          <div class="card-title">Ask J7</div>
+          <div class="card-sub">Chat with your tracker</div>
+        </div>
+      </div>
+      <i class="chevron" id="chatChevron">&#8250;</i>
+    </div>
+    <div class="card-body" id="chatBody" style="display:none;">
+      <div class="ask-box">
+        <input type="text" id="chatInput" placeholder="Ask J7 anything...">
+        <div class="ask-controls">
+          <button class="voice-pill" id="voiceBtn" onclick="app.toggleVoiceInput()">
+            <i class="mic-icon">&#127908;</i><span id="voiceLabel">voice</span>
+          </button>
+          <button class="send-btn" onclick="app.sendChat()">&#8593;</button>
+        </div>
+      </div>
+      <div class="wake-word-row">
+        <label class="wake-toggle">
+          <input type="checkbox" id="wakeWordToggle" onchange="app.toggleWakeWord(this.checked)">
+          <span>Listen for "J7 activate"</span>
+        </label>
+      </div>
+      <div class="chat-log" id="chatLog"></div>
+      <div class="chat-log-controls" id="chatLogControls" style="display:none;">
+        <button onclick="app.clearChatOnly()">Clear conversation</button>
+      </div>
+    </div>
+    </div>
 
     <div class="card-group" id="walletsGroup">
     <div class="card" id="walletsCardHeader" onclick="app.toggleSection('wallets')">
@@ -191,11 +204,7 @@
     </div>
     </div>
 
-  </div>
-
-  </div>
-
-  <div class="charts-panel" id="chartsPanel">
+    <div class="card-group" id="chartsGroup">
     <div class="card" id="chartsCardHeader" onclick="app.toggleSection('charts')">
       <div class="card-left">
         <div class="icon-box icon-blue">&#128200;</div>
@@ -207,12 +216,14 @@
       <i class="chevron" id="chartsChevron">&#8250;</i>
     </div>
     <div class="card-body" id="chartsBody" style="display:none;">
-      <div class="section-label" id="chartLabel">General Solana market (SOL/USDC)</div>
-      <div class="chart-frame-wrap">
-        <iframe id="chartFrame" class="chart-frame" src="https://dexscreener.com/solana/58oqchx4ywmvkdwllzzbi4chocc2fqcuwbkwmihlyqo2?embed=1&theme=dark&trades=0&info=0" loading="lazy"></iframe>
-      </div>
-      <div class="placeholder-note">Scanning a token in Watchlist switches this to that token's chart.</div>
+      <div class="placeholder-note" style="margin-top:0;">Charts open in a new tab on DexScreener instead of loading inline — more reliable than embedding.</div>
+      <button class="launch-btn" onclick="app.openChartExternal()">Open general Solana chart &#8599;</button>
+      <button class="launch-btn" id="lastScanChartBtn" onclick="app.openChartExternal(true)" style="display:none;">Open last scanned token's chart &#8599;</button>
     </div>
+    </div>
+
+  </div>
+
   </div>
 
 </div>

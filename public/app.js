@@ -6,7 +6,7 @@ const WALLET_ENDPOINTS = {
   solana: 'wallets-solana'
 };
 
-const SECTION_ORDER = ['wallets', 'updates', 'watchlist', 'charts'];
+const SECTION_ORDER = ['wallets', 'updates', 'watchlist', 'charts', 'chat'];
 
 const app = {
   wallets: [],
@@ -21,21 +21,24 @@ const app = {
   recognition: null,
   isListening: false, // deprecated, kept only to avoid breaking any stray references
   synth: window.speechSynthesis,
-  sectionsOpen: { wallets: false, updates: false, watchlist: false, charts: false },
+  sectionsOpen: { wallets: false, updates: false, watchlist: false, charts: false, chat: false },
   lastScannedMint: null,
+  lastScannedPair: null,
 
-  setGreeting() {
+  speakGreeting() {
     const hour = new Date().getHours();
     let timeGreeting = 'Good evening';
     if (hour < 12) timeGreeting = 'Good morning';
     else if (hour < 18) timeGreeting = 'Good afternoon';
-
-    document.getElementById('greetingSub').textContent = `${timeGreeting} \u{1F44B}`;
-    document.getElementById('greetingMain').innerHTML = 'What can I help<br>you <span class="grad">track today?</span>';
+    // Browsers often block speech synthesis that isn't tied to a user
+    // gesture, so this may not always play automatically - that's an
+    // inherent browser restriction, not a bug. It'll still work fine the
+    // moment the user taps anything on the page.
+    this.speak(`${timeGreeting}, Edwin. What are we tracking today?`);
   },
 
   async init() {
-    this.setGreeting();
+    this.speakGreeting();
     this.loadWallets();
     this.renderWallets();
     this.loadWatchlist();
@@ -82,7 +85,7 @@ const app = {
   enterHubMode() {
     document.getElementById('hubView').style.display = 'block';
     document.getElementById('hubBackBar').style.display = 'none';
-    ['walletsGroup', 'updatesGroup', 'watchlistGroup', 'chartsPanel'].forEach(id => {
+    ['walletsGroup', 'updatesGroup', 'watchlistGroup', 'chartsGroup', 'chatGroup'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
@@ -93,7 +96,7 @@ const app = {
     document.getElementById('hubView').style.display = 'none';
     document.getElementById('hubBackBar').style.display = 'flex';
 
-    const groupIds = { wallets: 'walletsGroup', updates: 'updatesGroup', watchlist: 'watchlistGroup', charts: 'chartsPanel' };
+    const groupIds = { wallets: 'walletsGroup', updates: 'updatesGroup', watchlist: 'watchlistGroup', charts: 'chartsGroup', chat: 'chatGroup' };
     Object.entries(groupIds).forEach(([key, id]) => {
       const el = document.getElementById(id);
       if (el) el.style.display = key === name ? 'block' : 'none';
@@ -121,7 +124,6 @@ const app = {
     this.sectionsOpen[name] = !isOpen;
     document.getElementById(`${name}Body`).style.display = isOpen ? 'none' : 'block';
     document.getElementById(`${name}Chevron`).classList.toggle('open', !isOpen);
-    if (name === 'charts' && !isOpen) this.refreshChartFrame();
   },
 
   openSection(name) {
@@ -246,7 +248,7 @@ const app = {
 
     this.lastScannedMint = data.mint;
     const shortMint = `${data.mint.slice(0, 6)}...${data.mint.slice(-4)}`;
-    this.updateChartTo(data.market?.pairAddress, true, shortMint);
+    this.setScannedChartTarget(data.market?.pairAddress, shortMint);
   },
 
   renderTokenCheck(data, el) {
@@ -280,7 +282,7 @@ const app = {
       const short = w.mint.slice(0, 6) + '...' + w.mint.slice(-4);
       const mcap = w.marketCap ? `$${Number(w.marketCap).toLocaleString()} mcap` : '';
       return `
-        <div class="watchlist-card" onclick="app.updateChartTo('${w.pairAddress || ''}', true, '${short}')" style="cursor:pointer;">
+        <div class="watchlist-card" onclick="app.openWatchlistChart('${w.pairAddress || ''}')" style="cursor:pointer;">
           <div class="wl-top"><span class="wl-mint">${short}</span><span class="risk-badge ${w.level}">${w.level}</span></div>
           <div class="wl-time">${mcap ? mcap + ' · ' : ''}${this.timeAgo(w.checkedAt)}</div>
         </div>`;
@@ -295,36 +297,35 @@ const app = {
     return `${Math.floor(diff / 86400)}d ago`;
   },
 
-  // ---------- Charts ----------
-  updateChartTo(pairAddress, openSection, label) {
-    const frame = document.getElementById('chartFrame');
-    const labelEl = document.getElementById('chartLabel');
-    const summary = document.getElementById('chartsSummary');
-    const hubSummary = document.getElementById('hubChartsSummary');
+  // ---------- Charts: opened externally on DexScreener, never embedded ----------
+  // Embedding DexScreener's own site in an iframe proved unreliable (it's
+  // not built for third-party embedding and can hang indefinitely instead
+  // of failing clearly). Opening the real page in a new tab is slower by
+  // one click but always works.
+  setScannedChartTarget(pairAddress, label) {
+    this.lastScannedPair = pairAddress || null;
+    const btn = document.getElementById('lastScanChartBtn');
+    if (btn) {
+      btn.style.display = pairAddress ? 'block' : 'none';
+      btn.textContent = pairAddress ? `Open ${label || 'scanned token'}'s chart \u2197` : '';
+    }
+  },
+
+  openWatchlistChart(pairAddress) {
     if (!pairAddress) {
-      labelEl.textContent = 'No trading pair found for this token yet';
-      summary.textContent = 'No chart';
-      if (hubSummary) hubSummary.textContent = 'No chart';
-      if (openSection) this.goToSection('charts');
+      alert('No trading pair was found for this token when it was scanned.');
       return;
     }
-    frame.src = `https://dexscreener.com/solana/${pairAddress}?embed=1&theme=dark&trades=0&info=0`;
-    labelEl.textContent = label || 'Token chart';
-    summary.textContent = 'Token chart';
-    if (hubSummary) hubSummary.textContent = 'Token chart';
-    if (openSection) this.goToSection('charts');
+    window.open(`https://dexscreener.com/solana/${pairAddress}`, '_blank', 'noopener');
   },
 
-  resetChartToSolana() {
-    const frame = document.getElementById('chartFrame');
-    document.getElementById('chartLabel').textContent = 'General Solana market (SOL/USDC)';
-    document.getElementById('chartsSummary').textContent = 'Solana';
-    document.getElementById('hubChartsSummary').textContent = 'Solana';
-    frame.src = 'https://dexscreener.com/solana/58oqchx4ywmvkdwllzzbi4chocc2fqcuwbkwmihlyqo2?embed=1&theme=dark&trades=0&info=0';
-  },
-
-  refreshChartFrame() {
-    // No-op placeholder in case future logic needs to force-reload on open
+  openChartExternal(useLastScanned) {
+    const pairAddress = useLastScanned ? this.lastScannedPair : '58oqchx4ywmvkdwllzzbi4chocc2fqcuwbkwmihlyqo2';
+    if (!pairAddress) {
+      alert('No trading pair available for this token yet.');
+      return;
+    }
+    window.open(`https://dexscreener.com/solana/${pairAddress}`, '_blank', 'noopener');
   },
 
   // ---------- Alerts ----------
