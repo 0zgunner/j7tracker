@@ -17,6 +17,7 @@ const app = {
   trends: [],
   trendHistory: [],
   livePrice: null,
+  trendingTokens: [],
   alerts: [],
   recognition: null,
   isListening: false, // deprecated, kept only to avoid breaking any stray references
@@ -61,12 +62,13 @@ const app = {
 
     this.setupSpeechRecognition();
 
-    // Desktop starts in hub view (decorative overview, center reserved
-    // for Stage 3). Mobile always shows the normal card list directly -
-    // there's no room for a hub layout on a narrow screen.
+    // Desktop shows the sidebar dashboard, starting on the Home page.
+    // Mobile always shows the normal stacked card list directly.
     this.isDesktop = window.innerWidth >= 900;
     if (this.isDesktop) {
-      this.enterHubMode();
+      document.getElementById('sidebarNav').style.display = 'flex';
+      document.getElementById('topBadge').style.display = 'inline-flex';
+      this.showPage('home');
     }
 
     await this.refresh();
@@ -81,42 +83,106 @@ const app = {
     }, 30 * 1000);
   },
 
-  // ---------- Hub view (desktop only) ----------
-  enterHubMode() {
-    document.getElementById('hubView').style.display = 'block';
-    document.getElementById('hubBackBar').style.display = 'none';
-    ['walletsGroup', 'updatesGroup', 'watchlistGroup', 'chartsGroup', 'chatGroup'].forEach(id => {
+  // ---------- Sidebar dashboard page switching (desktop only) ----------
+  ALL_PAGE_IDS: ['page-home', 'page-tradebot', 'page-settings'],
+  ALL_GROUP_IDS: { wallets: 'walletsGroup', updates: 'updatesGroup', watchlist: 'watchlistGroup', charts: 'chartsGroup', chat: 'chatGroup' },
+
+  showPage(name) {
+    if (!this.isDesktop) { this.openSection(name); return; }
+
+    // Hide every standalone page and every card-group first.
+    this.ALL_PAGE_IDS.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
-  },
-
-  openHubSection(name) {
-    if (!this.isDesktop) { this.openSection(name); return; }
-    document.getElementById('hubView').style.display = 'none';
-    document.getElementById('hubBackBar').style.display = 'flex';
-
-    const groupIds = { wallets: 'walletsGroup', updates: 'updatesGroup', watchlist: 'watchlistGroup', charts: 'chartsGroup', chat: 'chatGroup' };
-    Object.entries(groupIds).forEach(([key, id]) => {
+    Object.values(this.ALL_GROUP_IDS).forEach(id => {
       const el = document.getElementById(id);
-      if (el) el.style.display = key === name ? 'block' : 'none';
+      if (el) el.style.display = 'none';
     });
 
-    this.openSection(name);
-    document.getElementById(`${name}CardHeader`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Update nav active state
+    document.querySelectorAll('.sidebar-nav-desktop .nav-item').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.page === name);
+    });
+
+    document.getElementById('hubBackBar').style.display = name === 'home' ? 'none' : 'flex';
+
+    if (name === 'home' || name === 'tradebot' || name === 'settings') {
+      document.getElementById(`page-${name}`).style.display = 'block';
+      if (name === 'home') this.renderHomeDashboard();
+    } else if (this.ALL_GROUP_IDS[name]) {
+      document.getElementById(this.ALL_GROUP_IDS[name]).style.display = 'block';
+      this.openSection(name);
+      document.getElementById(`${name}CardHeader`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   },
 
   closeHubDetail() {
     if (!this.isDesktop) return;
-    this.enterHubMode();
+    this.showPage('home');
   },
 
   // Unified entry point other code should use instead of calling
-  // openSection/openHubSection directly, so behavior stays consistent
-  // whether hub mode is active or not.
+  // openSection/showPage directly, so behavior stays consistent whether
+  // the sidebar dashboard is active or not.
   goToSection(name) {
-    if (this.isDesktop) this.openHubSection(name);
+    if (this.isDesktop) this.showPage(name);
     else this.openSection(name);
+  },
+
+  renderHomeDashboard() {
+    const walletsCount = this.wallets.length;
+    const scannedCount = this.watchlist.length;
+    const alertsCount = this.alerts.length;
+
+    document.getElementById('homeWalletsCount').textContent = walletsCount;
+    document.getElementById('homeScannedCount').textContent = scannedCount;
+    document.getElementById('homeAlertsCount').textContent = alertsCount;
+    document.getElementById('homeUsageWallets').textContent = walletsCount;
+    document.getElementById('homeUsageScans').textContent = scannedCount;
+
+    if (scannedCount > 0) {
+      const levelScore = { low: 1, medium: 2, high: 3 };
+      const avg = this.watchlist.reduce((sum, w) => sum + (levelScore[w.level] || 1), 0) / scannedCount;
+      const avgLabel = avg >= 2.5 ? 'High' : avg >= 1.5 ? 'Medium' : 'Low';
+      document.getElementById('homeAvgRisk').textContent = avgLabel;
+    } else {
+      document.getElementById('homeAvgRisk').textContent = '\u2014';
+    }
+
+    const recentEl = document.getElementById('homeRecentScans');
+    if (this.watchlist.length === 0) {
+      recentEl.innerHTML = '<div class="empty-note">No tokens scanned yet.</div>';
+    } else {
+      recentEl.innerHTML = this.watchlist.slice(0, 4).map(w => {
+        const short = w.mint.slice(0, 6) + '...' + w.mint.slice(-4);
+        return `<div class="watchlist-card" onclick="app.openWatchlistChart('${w.pairAddress || ''}')" style="cursor:pointer;">
+          <div class="wl-top"><span class="wl-mint">${short}</span><span class="risk-badge ${w.level}">${w.level}</span></div>
+          <div class="wl-time">${this.timeAgo(w.checkedAt)}</div>
+        </div>`;
+      }).join('');
+    }
+
+    const homeAlertsEl = document.getElementById('homeAlertsList');
+    if (homeAlertsEl) {
+      homeAlertsEl.innerHTML = this.alerts.length === 0
+        ? '<div class="empty-note">No active alerts.</div>'
+        : this.alerts.slice(0, 5).map(a => `<div class="alert-item"><span>${a.text}</span></div>`).join('');
+    }
+
+    const homeTrendingEl = document.getElementById('homeTrendingList');
+    if (homeTrendingEl) {
+      homeTrendingEl.innerHTML = this.trendingTokens.length === 0
+        ? '<div class="empty-note">No trending data yet.</div>'
+        : this.trendingTokens.slice(0, 5).map(t => {
+            const changeClass = (t.priceChange24h || 0) >= 0 ? 'ok' : 'high';
+            const changeSign = (t.priceChange24h || 0) >= 0 ? '+' : '';
+            return `<div class="trending-token-item" onclick="app.checkToken('${t.address}'); app.goToSection('watchlist');">
+              <div class="tt-left"><div class="tt-symbol">${t.symbol || '?'}</div><div class="tt-name">${t.name || ''}</div></div>
+              <div class="tt-right"><div class="tt-change ${changeClass}">${changeSign}${(t.priceChange24h || 0).toFixed(1)}%</div></div>
+            </div>`;
+          }).join('');
+    }
   },
 
   toggleSection(name) {
@@ -136,7 +202,7 @@ const app = {
     const nextIdx = (currentIdx + 1) % SECTION_ORDER.length;
     if (currentlyOpen) this.toggleSection(currentlyOpen);
     if (this.isDesktop) {
-      this.openHubSection(SECTION_ORDER[nextIdx]);
+      this.showPage(SECTION_ORDER[nextIdx]);
     } else {
       this.toggleSection(SECTION_ORDER[nextIdx]);
       document.getElementById(`${SECTION_ORDER[nextIdx]}CardHeader`).scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -190,12 +256,12 @@ const app = {
     this.wallets = this.wallets.filter(w => !(w.address === address && w.chain === chain));
     this.saveWallets();
     this.renderWallets();
+    if (this.isDesktop) this.renderHomeDashboard();
   },
 
   renderWallets() {
     const list = document.getElementById('walletList');
     document.getElementById('walletsSummary').textContent = `${this.wallets.length} watched`;
-    document.getElementById('hubWalletsSummary').textContent = `${this.wallets.length} watched`;
     if (this.wallets.length === 0) {
       list.innerHTML = '<div class="empty-note">No wallets added yet.</div>';
       return;
@@ -249,6 +315,7 @@ const app = {
     this.lastScannedMint = data.mint;
     const shortMint = `${data.mint.slice(0, 6)}...${data.mint.slice(-4)}`;
     this.setScannedChartTarget(data.market?.pairAddress, shortMint);
+    if (this.isDesktop) this.renderHomeDashboard();
   },
 
   renderTokenCheck(data, el) {
@@ -273,7 +340,6 @@ const app = {
   renderWatchlist() {
     const el = document.getElementById('watchlist');
     document.getElementById('watchlistSummary').textContent = `${this.watchlist.length} scanned`;
-    document.getElementById('hubWatchlistSummary').textContent = `${this.watchlist.length} scanned`;
     if (this.watchlist.length === 0) {
       el.innerHTML = '<div class="empty-note">No tokens scanned yet.</div>';
       return;
@@ -299,6 +365,7 @@ const app = {
     this.watchlist.splice(index, 1);
     this.saveWatchlist();
     this.renderWatchlist();
+    if (this.isDesktop) this.renderHomeDashboard();
   },
 
   timeAgo(iso) {
@@ -417,10 +484,11 @@ const app = {
   async refresh() {
     this.setStatus(true, 'SYNCING');
     try {
-      const [walletSignals, newsData, priceData] = await Promise.all([
+      const [walletSignals, newsData, priceData, trendingData] = await Promise.all([
         this.fetchWalletSignals(),
         this.fetchJson('news'),
-        this.fetchJson('price')
+        this.fetchJson('price'),
+        this.fetchJson('trending-tokens')
       ]);
 
       this.walletSignals = walletSignals.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -436,12 +504,17 @@ const app = {
         this.livePrice = priceData;
       }
 
+      if (trendingData && !trendingData.error) {
+        this.trendingTokens = trendingData.tokens || [];
+        this.renderTrendingTokens();
+      }
+
       document.getElementById('updatesSummary').textContent = `${this.newsItems.length} new`;
-      document.getElementById('hubUpdatesSummary').textContent = `${this.newsItems.length} new`;
       this.setStatus(true, 'LIVE');
 
       // Don't block the main refresh on alert re-checks
       this.checkWatchlistForRiskChanges();
+      if (this.isDesktop) this.renderHomeDashboard();
     } catch (err) {
       console.error('Refresh failed:', err);
       this.setStatus(false, 'ERROR');
@@ -533,9 +606,37 @@ const app = {
       </div>`).join('');
   },
 
+  renderTrendingTokens() {
+    const list = document.getElementById('trendingTokensList');
+    if (!list) return;
+    if (this.trendingTokens.length === 0) {
+      list.innerHTML = '<div class="empty-note">No trending token data yet.</div>';
+      return;
+    }
+    list.innerHTML = this.trendingTokens.map(t => {
+      const changeClass = (t.priceChange24h || 0) >= 0 ? 'ok' : 'high';
+      const changeSign = (t.priceChange24h || 0) >= 0 ? '+' : '';
+      return `
+        <div class="trending-token-item" onclick="app.checkToken('${t.address}'); app.goToSection('watchlist');">
+          <div class="tt-left">
+            <div class="tt-symbol">${t.symbol || '?'}</div>
+            <div class="tt-name">${t.name || ''}</div>
+          </div>
+          <div class="tt-right">
+            <div class="tt-change ${changeClass}">${changeSign}${(t.priceChange24h || 0).toFixed(1)}%</div>
+            <div class="tt-vol">$${Number(t.volume24h || 0).toLocaleString()} vol</div>
+          </div>
+        </div>`;
+    }).join('');
+  },
+
   setStatus(online, label) {
     document.getElementById('statusDot').classList.toggle('offline', !online);
     document.getElementById('statusText').textContent = label;
+    const dotDesktop = document.getElementById('statusDotDesktop');
+    const textDesktop = document.getElementById('statusTextDesktop');
+    if (dotDesktop) dotDesktop.classList.toggle('offline', !online);
+    if (textDesktop) textDesktop.textContent = label;
   },
 
   // ---------- Chat persistence ----------
@@ -578,6 +679,7 @@ const app = {
 
     const context = {
       livePrice: this.livePrice,
+      currentlyTrendingSolanaTokens: this.trendingTokens,
       watchedWallets: this.wallets,
       watchlist: this.watchlist,
       walletSignals: this.walletSignals.slice(0, 50),
@@ -773,11 +875,19 @@ const app = {
 
   toggleWakeWord(enabled) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const mobileBox = document.getElementById('wakeWordToggle');
+    const desktopBox = document.getElementById('wakeWordToggleDesktop');
     if (!SR) {
       alert('Wake word requires Chrome (SpeechRecognition not supported here).');
-      document.getElementById('wakeWordToggle').checked = false;
+      if (mobileBox) mobileBox.checked = false;
+      if (desktopBox) desktopBox.checked = false;
       return;
     }
+    // Keep both checkboxes (mobile chat card + desktop settings page) in
+    // sync, since both exist in the DOM at once now.
+    if (mobileBox) mobileBox.checked = enabled;
+    if (desktopBox) desktopBox.checked = enabled;
+
     this.wakeWordWanted = enabled;
     if (enabled) {
       this.startWakeListening();

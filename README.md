@@ -265,3 +265,44 @@ before the user has interacted with the page at all. If the greeting
 doesn't play on first load, that's this browser restriction, not a bug -
 tapping anywhere on the page first (then reloading) or subsequent visits
 in the same session often resolves it.
+
+## Sidebar dashboard redesign
+
+Desktop now uses a full sidebar dashboard layout (Home, Wallets,
+Watchlist, Analytics, Charts, AI Trade Bot, Ask J7, Settings), matching
+a SaaS-dashboard visual style: hero banner, feature cards, stat panels,
+a Smart Alerts panel, and live trending Solana tokens. All real data
+(wallets, scans, alerts, trending tokens) comes from the same backend
+functions as before - nothing new was fabricated for the layout itself.
+
+**One deliberate exception, clearly labeled:** the "AI Trade Bot" page
+and the Home page's AI Trade Agent panel show illustrative sample data
+(e.g. "Bought 12.45 SOLDEGEN") to preview what Stage 3 autonomous
+execution will eventually look like. This is marked with an explicit
+"DEMO DATA — Stage 3 not active" badge and explanatory text. It is never
+real trade data — J7Tracker has never held a private key or moved funds.
+This was a deliberate choice (asked and confirmed) rather than silently
+fabricating fake activity.
+
+Mobile is unaffected — same stacked, collapsible card layout as before.
+
+## Real trending Solana tokens (not stale training data)
+
+Added a new function (trending-tokens.js) pulling DexScreener's free
+"latest boosted tokens" feed, filtered to Solana and sorted by actual
+24h volume. This fixed a real problem: the chat assistant had no live
+data source for current trending tokens, so it was falling back on
+famous historical memecoins from its own training memory (BONK, PEPE,
+SHIB) when asked what's trending today. Now it's explicitly instructed
+to use only this live list and say so plainly if it's empty, rather than
+guessing from memory.
+
+## Robinhood Chain / Ethereum wallet activity fix
+
+Both wallet functions were silently filtering out any transaction that
+didn't move plain native currency. Since most real activity on Robinhood
+Chain (tokenized stock trades) and a lot of Ethereum activity (token
+swaps, approvals) happens via contract calls carrying zero native ETH
+value, this filter was hiding almost everything - which is why Robinhood
+Chain wallets showed "no available data." Fixed: contract-call
+transactions are now shown too, not just plain transfers.

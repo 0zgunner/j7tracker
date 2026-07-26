@@ -54,12 +54,20 @@ exports.handler = async (event) => {
     const txs = await getWalletTxs(addr);
     txs.forEach(tx => {
       const valueEth = parseFloat(tx.value) / 1e18;
-      if (valueEth <= 0) return;
       const direction = tx.from?.toLowerCase() === addr.toLowerCase() ? 'sent' : 'received';
+      const isContractCall = tx.input && tx.input !== '0x';
+      let title;
+      if (valueEth > 0) {
+        title = `${addr.slice(0, 6)}...${addr.slice(-4)} ${direction} ${valueEth.toFixed(4)} ETH`;
+      } else if (isContractCall) {
+        title = `${addr.slice(0, 6)}...${addr.slice(-4)} interacted with a contract (likely a token swap or approval)`;
+      } else {
+        return;
+      }
       signals.push({
         chain: 'ethereum',
         type: 'wallet',
-        title: `${addr.slice(0, 6)}...${addr.slice(-4)} ${direction} ${valueEth.toFixed(3)} ETH`,
+        title,
         subtitle: `block ${tx.blockNumber} · gas used ${tx.gasUsed}`,
         timestamp: new Date(parseInt(tx.timeStamp, 10) * 1000).toISOString()
       });

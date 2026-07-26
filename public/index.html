@@ -28,69 +28,169 @@
     <div id="alertsList"></div>
   </div>
 
-  <!-- Desktop hub view: the whole homepage. Center reserved for Stage 3. -->
-  <div class="hub-view" id="hubView" style="display:none;">
-    <svg viewBox="0 0 420 420">
-      <path d="M 66 66 Q 140 90 210 210" class="hub-line hub-line-a"/>
-      <path d="M 354 66 Q 280 90 210 210" class="hub-line hub-line-b"/>
-      <path d="M 66 340 Q 140 300 210 210" class="hub-line hub-line-a"/>
-      <path d="M 354 340 Q 280 300 210 210" class="hub-line hub-line-b"/>
-    </svg>
+  <!-- Desktop sidebar: hidden on mobile via CSS. When active, JS hides
+       .cards content and shows this instead, using the sidebar nav to
+       show/hide the same card-group elements below (no duplication). -->
+  <div class="sidebar-nav-desktop" id="sidebarNav" style="display:none;">
+    <div class="sidebar-logo">J7<span>TRACKER</span></div>
+    <button class="nav-item active" data-page="home" onclick="app.showPage('home')"><span class="nav-icon">&#127968;</span>Home</button>
+    <button class="nav-item" data-page="wallets" onclick="app.showPage('wallets')"><span class="nav-icon">&#128188;</span>Wallets</button>
+    <button class="nav-item" data-page="watchlist" onclick="app.showPage('watchlist')"><span class="nav-icon">&#128737;</span>Watchlist</button>
+    <button class="nav-item" data-page="updates" onclick="app.showPage('updates')"><span class="nav-icon">&#128200;</span>Analytics</button>
+    <button class="nav-item" data-page="charts" onclick="app.showPage('charts')"><span class="nav-icon">&#128202;</span>Charts</button>
+    <button class="nav-item" data-page="tradebot" onclick="app.showPage('tradebot')"><span class="nav-icon">&#129302;</span>AI Trade Bot</button>
+    <button class="nav-item" data-page="chat" onclick="app.showPage('chat')"><span class="nav-icon">&#128172;</span>Ask J7</button>
+    <button class="nav-item" data-page="settings" onclick="app.showPage('settings')"><span class="nav-icon">&#9881;</span>Settings</button>
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-status">
+      <span class="dot" id="statusDotDesktop"></span>
+      <span id="statusTextDesktop">CONNECTING</span>
+    </div>
+  </div>
 
-    <div class="hub-center">
-      <div class="lock">&#128274;</div>
-      <div class="label">STAGE 3</div>
-      <div class="sub">Reserved</div>
+  <div class="badge-pill" id="topBadge" style="display:none;">&#9889; Powered by AI &middot; Secured by Solana</div>
+
+  <!-- HOME dashboard (desktop only) -->
+  <div class="page" id="page-home" style="display:none;">
+    <div class="hero-banner">
+      <div class="hero-text">
+        <h1>Track. Analyze. <span class="grad">Decide.</span></h1>
+        <p>Your Solana wallet tracker with AI risk scanning, live market data, and an assistant grounded in your real activity — not guesses.</p>
+        <div class="hero-ctas">
+          <button class="cta-primary" onclick="app.showPage('wallets')">Track a Wallet</button>
+          <button class="cta-secondary" onclick="app.showPage('watchlist')">Scan a Token</button>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="hero-orb">
+          <div class="hero-orb-ring"></div>
+          <div class="hero-orb-ring ring2"></div>
+          <div class="hero-orb-icon">&#9670;</div>
+        </div>
+      </div>
     </div>
 
-    <button class="hub-node n-wallets" onclick="app.openHubSection('wallets')">
-      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-      <div class="icon-row">
-        <div class="icon icon-amber">&#128188;</div>
+    <div class="feature-grid">
+      <button class="feature-card" onclick="app.showPage('wallets')">
+        <div class="feature-icon icon-amber">&#128188;</div>
+        <div class="feature-title">Smart Wallet Tracking</div>
+        <div class="feature-sub">Track any Solana, Ethereum, or Robinhood Chain wallet in real time.</div>
+      </button>
+      <button class="feature-card" onclick="app.showPage('watchlist')">
+        <div class="feature-icon icon-purple">&#129504;</div>
+        <div class="feature-title">AI Risk Scanning</div>
+        <div class="feature-sub">Mint/freeze authority, holder concentration, bundled wallets, liquidity locks.</div>
+      </button>
+      <button class="feature-card" onclick="app.showPage('updates')">
+        <div class="feature-icon icon-blue">&#128202;</div>
+        <div class="feature-title">Live Trending Data</div>
+        <div class="feature-sub">Real current trending Solana tokens, not stale training-data guesses.</div>
+      </button>
+      <button class="feature-card" onclick="app.showPage('chat')">
+        <div class="feature-icon icon-cyan">&#128172;</div>
+        <div class="feature-title">AI Assistant</div>
+        <div class="feature-sub">Ask questions grounded in your real tracked data, hands-free with voice.</div>
+      </button>
+    </div>
+
+    <div class="dashboard-grid">
+      <div class="panel">
+        <div class="panel-header">Your Overview</div>
+        <div class="overview-stats">
+          <div class="stat-box"><div class="stat-value" id="homeWalletsCount">0</div><div class="stat-label">Wallets watched</div></div>
+          <div class="stat-box"><div class="stat-value" id="homeScannedCount">0</div><div class="stat-label">Tokens scanned</div></div>
+          <div class="stat-box"><div class="stat-value" id="homeAvgRisk">&mdash;</div><div class="stat-label">Avg risk level</div></div>
+          <div class="stat-box"><div class="stat-value" id="homeAlertsCount">0</div><div class="stat-label">Active alerts</div></div>
+        </div>
+        <div class="panel-sub-header">Recently scanned</div>
+        <div id="homeRecentScans"></div>
+      </div>
+
+      <div class="panel demo-panel">
+        <div class="demo-badge">DEMO DATA &mdash; Stage 3 not active, nothing here is real</div>
+        <div class="panel-header">AI Trade Agent</div>
+        <div class="agent-avatar-row">
+          <div class="agent-avatar">&#129302;</div>
+          <div>
+            <div class="agent-status-text">Autonomous execution isn't built yet.</div>
+            <div class="agent-status-sub">This shows what it will look like once Stage 3 is active.</div>
+          </div>
+        </div>
+        <div class="panel-sub-header">Sample actions (not real)</div>
+        <div class="ai-action-item"><span>Bought 12.45 SOLDEGEN</span><span class="tag-long">LONG</span></div>
+        <div class="ai-action-item"><span>Sold 8.21 BONK</span><span class="tag-profit">TAKE PROFIT</span></div>
+        <div class="ai-action-item"><span>Set stop-loss on WIF</span><span class="tag-risk">RISK MGMT</span></div>
+        <button class="launch-btn" style="margin-top:10px;" onclick="app.showPage('tradebot')">View full preview</button>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <div class="panel">
+        <div class="panel-header">Smart Alerts</div>
+        <div id="homeAlertsList"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">Trending Solana Tokens</div>
+        <div id="homeTrendingList"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">How J7Tracker Works</div>
+      <div class="features-info-grid">
+        <div class="info-item"><span class="info-icon">&#128269;</span>Market Scanning &mdash; live Solana token data pulled continuously</div>
+        <div class="info-item"><span class="info-icon">&#128142;</span>Alpha Detection &mdash; flags mint/freeze authority, concentration, bundling</div>
+        <div class="info-item"><span class="info-icon">&#128201;</span>Sentiment Analysis &mdash; Reddit and news trend tracking</div>
+        <div class="info-item"><span class="info-icon">&#9889;</span>Auto Execution &mdash; reserved for Stage 3, not active</div>
+        <div class="info-item"><span class="info-icon">&#129504;</span>Assistant Memory &mdash; chat remembers context across sessions</div>
+      </div>
+    </div>
+
+    <div class="usage-stats-bar">
+      <div><span id="homeUsageWallets">0</span> wallets tracked</div>
+      <div><span id="homeUsageScans">0</span> tokens scanned</div>
+      <div>Free-tier APIs only</div>
+      <div>&#128274; Non-custodial &mdash; no funds held</div>
+    </div>
+  </div>
+
+  <!-- AI Trade Bot full preview (desktop only) -->
+  <div class="page" id="page-tradebot" style="display:none;">
+    <div class="panel demo-panel">
+      <div class="demo-badge">DEMO DATA &mdash; Stage 3 not active, nothing on this page is real</div>
+      <div class="panel-header">AI Trade Agent Preview</div>
+      <p class="demo-explainer">This is a mockup of what autonomous execution will look like once Stage 3 is built and you've explicitly opted in. Right now, J7Tracker only reads data &mdash; it has never held a private key or moved any funds.</p>
+      <div class="agent-avatar-row">
+        <div class="agent-avatar">&#129302;</div>
         <div>
-          <div class="title">Wallets</div>
-          <div class="sub" id="hubWalletsSummary">0 watched</div>
+          <div class="agent-status-text">Autonomous Mode: Not Active</div>
+          <div class="agent-status-sub">No trades have been executed. No wallet with trading permissions exists.</div>
         </div>
       </div>
-    </button>
+      <div class="panel-sub-header">Sample Recent Actions (illustrative only)</div>
+      <div class="ai-action-item"><span>Bought 12.45 SOLDEGEN &middot; $1,245.00</span><span class="tag-long">LONG</span></div>
+      <div class="ai-action-item"><span>Sold 8.21 BONK &middot; $982.30</span><span class="tag-profit">TAKE PROFIT</span></div>
+      <div class="ai-action-item"><span>Bought 5.63 WIF &middot; $754.21</span><span class="tag-long">LONG</span></div>
+      <div class="ai-action-item"><span>Set stop-loss on POPCAT &middot; $612.44</span><span class="tag-risk">RISK MGMT</span></div>
+    </div>
+  </div>
 
-    <button class="hub-node n-updates" onclick="app.openHubSection('updates')">
-      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-      <div class="icon-row">
-        <div class="icon icon-blue">&#128276;</div>
-        <div>
-          <div class="title">Updates</div>
-          <div class="sub" id="hubUpdatesSummary">0 new</div>
-        </div>
+  <!-- Settings (desktop only - wake word toggle lives here, moved out of chat) -->
+  <div class="page" id="page-settings" style="display:none;">
+    <div class="panel">
+      <div class="panel-header">Voice</div>
+      <div class="wake-word-row" style="padding:0;">
+        <label class="wake-toggle">
+          <input type="checkbox" id="wakeWordToggleDesktop" onchange="app.toggleWakeWord(this.checked)">
+          <span>Listen for "J7 activate"</span>
+        </label>
       </div>
-    </button>
-
-    <button class="hub-node n-watchlist" onclick="app.openHubSection('watchlist')">
-      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-      <div class="icon-row">
-        <div class="icon icon-purple">&#128737;</div>
-        <div>
-          <div class="title">Watchlist</div>
-          <div class="sub" id="hubWatchlistSummary">0 scanned</div>
-        </div>
-      </div>
-    </button>
-
-    <button class="hub-node n-charts" onclick="app.openHubSection('charts')">
-      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-      <div class="icon-row">
-        <div class="icon icon-blue">&#128200;</div>
-        <div>
-          <div class="title">Charts</div>
-          <div class="sub" id="hubChartsSummary">Solana</div>
-        </div>
-      </div>
-    </button>
-
-    <button class="hub-fab" onclick="app.openHubSection('chat')" title="Ask J7">
-      <span class="fab-icon">&#128172;</span>
-      <span class="fab-label">Ask J7</span>
-    </button>
+      <p class="placeholder-note">Uses your browser's built-in speech recognition (best support in Chrome). Only listens while this tab is open.</p>
+    </div>
+    <div class="panel">
+      <div class="panel-header">About this build</div>
+      <p class="placeholder-note" style="margin-top:0;">Read-only tracker. No wallet with trading permissions exists. No funds are held or moved by this app. All data sources are free-tier APIs.</p>
+    </div>
   </div>
 
   <div class="hub-back-bar" id="hubBackBar" style="display:none;">
@@ -120,7 +220,7 @@
           <button class="send-btn" onclick="app.sendChat()">&#8593;</button>
         </div>
       </div>
-      <div class="wake-word-row">
+      <div class="wake-word-row" id="chatWakeRow">
         <label class="wake-toggle">
           <input type="checkbox" id="wakeWordToggle" onchange="app.toggleWakeWord(this.checked)">
           <span>Listen for "J7 activate"</span>
@@ -174,7 +274,9 @@
       <i class="chevron" id="updatesChevron">&#8250;</i>
     </div>
     <div class="card-body" id="updatesBody" style="display:none;">
-      <div class="section-label">Trending</div>
+      <div class="section-label">Trending Solana tokens</div>
+      <div id="trendingTokensList"></div>
+      <div class="section-label" style="margin-top:16px;">Trending topics</div>
       <div id="trendList"></div>
       <div class="section-label" style="margin-top:16px;">Headlines</div>
       <div id="newsList"></div>
