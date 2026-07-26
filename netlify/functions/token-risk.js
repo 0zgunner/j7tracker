@@ -68,6 +68,93 @@ async function checkTopHolderType(topHolderTokenAccount) {
 // cluster of near-empty-history wallets each holding a meaningful chunk of
 // supply is a common signature of a deployer "bundling" a launch across many
 // wallets to dodge concentration checks, then dumping them together.
+// Minimal base58 decoder (no external dependency) - needed to read raw
+// Pump.fun instruction data and match it against the known instruction
+// discriminator, since generic RPC parsing doesn't decode third-party
+// program instructions like Etherscan-style explorers do for known ones.
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+function base58Decode(str) {
+  let bytes = [0];
+  for (let i = 0; i < str.length; i++) {
+    const value = BASE58_ALPHABET.indexOf(str[i]);
+    if (value === -1) return null;
+    let carry = value;
+    for (let j = 0; j < bytes.length; j++) {
+      carry += bytes[j] * 58;
+      bytes[j] = carry & 0xff;
+      carry >>= 8;
+    }
+    while (carry > 0) {
+      bytes.push(carry & 0xff);
+      carry >>= 8;
+    }
+  }
+  for (let i = 0; i < str.length && str[i] === '1'; i++) bytes.push(0);
+  return bytes.reverse();
+}
+
+const PUMP_FUN_PROGRAM_ID = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+// The known 8-byte discriminator for Pump.fun's "create" (new token) instruction.
+const PUMP_FUN_CREATE_DISCRIMINATOR = [24, 30, 200, 40, 5, 28, 7, 119];
+
+async function findDeployerWallet(mintAddress) {
+  try {
+    // Solana RPC returns most-recent-first with no direct "oldest" query,
+    // so we pull the largest page available and take the last entry. If
+    // the mint has fewer than 1000 total transactions (true for the vast
+    // majority of tokens) this is genuinely the creation transaction.
+    const sigs = await rpcCall('getSignaturesForAddress', [mintAddress, { limit: 1000 }]);
+    if (!Array.isArray(sigs) || sigs.length === 0) return null;
+    const genesisSig = sigs[sigs.length - 1].signature;
+    const tx = await rpcCall('getTransaction', [genesisSig, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]);
+    const feePayerRaw = tx?.transaction?.message?.accountKeys?.[0];
+    const feePayer = typeof feePayerRaw === 'string' ? feePayerRaw : feePayerRaw?.pubkey;
+    return feePayer || null;
+  } catch (err) {
+    console.error('Deployer lookup failed:', err.message);
+    return null;
+  }
+}
+
+// Checks a bounded, recent sample of the deployer wallet's activity for
+// other Pump.fun token-creation instructions. This is a heuristic, not a
+// complete history: it only looks at a small recent window (to keep scan
+// time reasonable), so it will miss deployers whose past launches are
+// further back, or who've since gone quiet. It's real on-chain evidence
+// when it does find something, just not exhaustive.
+async function checkDeployerHistory(deployerWallet) {
+  if (!deployerWallet) return { checked: false };
+  try {
+    const sigs = await rpcCall('getSignaturesForAddress', [deployerWallet, { limit: 15 }]);
+    if (!Array.isArray(sigs) || sigs.length === 0) return { checked: true, createCount: 0, sampledCount: 0, deployerWallet };
+
+    const sample = sigs.slice(0, 8);
+    const txs = await Promise.all(sample.map(s =>
+      rpcCall('getTransaction', [s.signature, { encoding: 'json', maxSupportedTransactionVersion: 0 }]).catch(() => null)
+    ));
+
+    let createCount = 0;
+    txs.forEach(tx => {
+      if (!tx) return;
+      const accountKeys = tx.transaction?.message?.accountKeys || [];
+      const instructions = tx.transaction?.message?.instructions || [];
+      instructions.forEach(ix => {
+        const programId = accountKeys[ix.programIdIndex];
+        if (programId !== PUMP_FUN_PROGRAM_ID || !ix.data) return;
+        const bytes = base58Decode(ix.data);
+        if (!bytes || bytes.length < 8) return;
+        const disc = bytes.slice(0, 8);
+        if (disc.every((b, i) => b === PUMP_FUN_CREATE_DISCRIMINATOR[i])) createCount++;
+      });
+    });
+
+    return { checked: true, createCount, sampledCount: sample.length, deployerWallet };
+  } catch (err) {
+    console.error('Deployer history check failed:', err.message);
+    return { checked: false };
+  }
+}
+
 async function checkBundledWallets(topHolders) {
   const candidates = topHolders.slice(1, 6); // holders #2-#6
   if (candidates.length === 0) return { freshCount: 0, checked: 0 };
@@ -213,7 +300,7 @@ async function checkLiquidityLock(market) {
   }
 }
 
-function computeRisk(parsed, owner, topHolders, market, topHolderType, bundleCheck, liquidityLock) {
+function computeRisk(parsed, owner, topHolders, market, topHolderType, bundleCheck, liquidityLock, deployerHistory) {
   const flags = [];
   let riskPoints = 0;
 
@@ -293,6 +380,29 @@ function computeRisk(parsed, owner, topHolders, market, topHolderType, bundleChe
       riskPoints += 10;
     } else {
       flags.push({ severity: 'ok', label: 'No obvious cluster of fresh/bundled wallets among top holders' });
+    }
+  }
+
+  // Deployer history heuristic - real on-chain evidence, but from a bounded
+  // recent sample, not the deployer's complete history.
+  if (deployerHistory && deployerHistory.checked) {
+    const shortDeployer = deployerHistory.deployerWallet
+      ? `${deployerHistory.deployerWallet.slice(0, 6)}...${deployerHistory.deployerWallet.slice(-4)}`
+      : 'deployer';
+    if (deployerHistory.createCount >= 3) {
+      flags.push({
+        severity: 'high',
+        label: `Deployer wallet (${shortDeployer}) created ${deployerHistory.createCount} other Pump.fun tokens in its last ${deployerHistory.sampledCount} transactions — serial-deployer pattern, common in rug operations`
+      });
+      riskPoints += 35;
+    } else if (deployerHistory.createCount >= 1) {
+      flags.push({
+        severity: 'medium',
+        label: `Deployer wallet (${shortDeployer}) created ${deployerHistory.createCount} other Pump.fun token(s) recently — worth checking those tokens' outcomes manually`
+      });
+      riskPoints += 15;
+    } else {
+      flags.push({ severity: 'ok', label: `No other token creations found from the deployer in its last ${deployerHistory.sampledCount} transactions (limited recent sample, not full history)` });
     }
   }
 
@@ -377,13 +487,16 @@ exports.handler = async (event) => {
       getMarketData(mint)
     ]);
 
-    const [topHolderType, bundleCheck, liquidityLock] = await Promise.all([
+    const [topHolderType, bundleCheck, liquidityLock, deployerWallet] = await Promise.all([
       topHolders.length > 0 ? checkTopHolderType(topHolders[0].address) : null,
       checkBundledWallets(topHolders),
-      checkLiquidityLock(market)
+      checkLiquidityLock(market),
+      findDeployerWallet(mint)
     ]);
 
-    const risk = computeRisk(parsed, owner, topHolders, market, topHolderType, bundleCheck, liquidityLock);
+    const deployerHistory = await checkDeployerHistory(deployerWallet);
+
+    const risk = computeRisk(parsed, owner, topHolders, market, topHolderType, bundleCheck, liquidityLock, deployerHistory);
 
     return {
       statusCode: 200,

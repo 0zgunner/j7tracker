@@ -159,6 +159,8 @@ header {
 }
 .wallet-card .addr { font-family: var(--font-mono); font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
 .wallet-card .chain-tag { font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-top: 4px; }
+.wallet-portfolio-value { font-family: var(--font-mono); font-size: 11px; color: var(--green); margin-top: 6px; font-weight: 600; }
+.wallet-portfolio-value.muted { color: var(--text-muted); font-weight: 400; font-style: italic; }
 .remove-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; }
 .remove-btn:hover { color: var(--red); }
 

@@ -306,3 +306,42 @@ swaps, approvals) happens via contract calls carrying zero native ETH
 value, this filter was hiding almost everything - which is why Robinhood
 Chain wallets showed "no available data." Fixed: contract-call
 transactions are now shown too, not just plain transfers.
+
+## Deployer history check (Stage 2)
+
+New: token scans now check whether the deployer wallet has recently
+created other Pump.fun tokens, using the real "create" instruction
+discriminator (not just a guess) - a genuine serial-deployer signal, a
+common rug pattern where one wallet launches many tokens and abandons
+each one. This is a bounded, heuristic check: it only samples the
+deployer's most recent ~8 transactions to keep scan time reasonable, so
+it will miss creations further back in their history or a deployer
+who's gone quiet since. When it does find something, it's real on-chain
+evidence, just not an exhaustive record.
+
+## Portfolio value tracking (Stage 1)
+
+New: Solana wallets in the Wallets section now show an actual USD value
+(SOL balance + priced token holdings), not just activity signals. Uses
+Helius for balances/holdings and DexScreener for pricing - same free
+tiers as everything else. Only Solana wallets get this for now, since
+that's where the pricing/holdings tooling is already built out.
+
+## Alerts scope expanded
+
+Risk-change re-checks now cover your 10 most recently scanned tokens
+instead of just 3.
+
+## Still open (not built this round)
+
+- **Reddit** is still not connected - blocked on the OAuth app
+  credentials from earlier, not something fixable in code alone.
+- **Cross-device sync** - everything still lives in browser
+  localStorage only. A real fix (server-side sync so your data follows
+  you across devices) is a bigger addition worth its own dedicated pass
+  rather than rushing it in alongside everything else this round.
+- **Push notifications for alerts** - still in-app only, requires a
+  service worker and notification permissions to reach you with the tab
+  closed.
+- **Deployer history for Ethereum/Robinhood Chain tokens** - only built
+  for Solana so far, since risk scanning in general is Solana-only.

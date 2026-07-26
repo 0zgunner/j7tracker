@@ -18,6 +18,7 @@ const app = {
   trendHistory: [],
   livePrice: null,
   trendingTokens: [],
+  walletPortfolios: {},
   alerts: [],
   recognition: null,
   isListening: false, // deprecated, kept only to avoid breaking any stray references
@@ -268,14 +269,30 @@ const app = {
     }
     list.innerHTML = this.wallets.map(w => {
       const short = w.address.length > 10 ? w.address.slice(0, 6) + '...' + w.address.slice(-4) : w.address;
+      const portfolio = this.walletPortfolios[w.address];
+      const portfolioLine = portfolio
+        ? `<div class="wallet-portfolio-value">$${portfolio.totalValueUsd.toLocaleString(undefined, {maximumFractionDigits: 2})} &middot; ${portfolio.solBalance.toFixed(3)} SOL</div>`
+        : (w.chain === 'solana' ? '<div class="wallet-portfolio-value muted">Loading value...</div>' : '');
       return `
         <div class="wallet-card">
           <div class="addr"><span>${short}</span>
             <button class="remove-btn" onclick="app.removeWallet('${w.address}','${w.chain}')">&times;</button>
           </div>
           <div class="chain-tag">${w.chain}</div>
+          ${portfolioLine}
         </div>`;
     }).join('');
+  },
+
+  async fetchWalletPortfolios() {
+    const solanaWallets = this.wallets.filter(w => w.chain === 'solana');
+    await Promise.all(solanaWallets.map(async w => {
+      const data = await this.fetchJson('wallet-portfolio', { address: w.address });
+      if (data && !data.error) {
+        this.walletPortfolios[w.address] = data;
+      }
+    }));
+    this.renderWallets();
   },
 
   // ---------- Watchlist / token risk ----------
@@ -447,7 +464,7 @@ const app = {
   // cycle and raises an in-app alert if their risk level has changed since
   // last time. Capped to a small number to keep API usage reasonable.
   async checkWatchlistForRiskChanges() {
-    const toRecheck = this.watchlist.slice(0, 3);
+    const toRecheck = this.watchlist.slice(0, 10);
     for (const entry of toRecheck) {
       const data = await this.fetchJson('token-risk', { mint: entry.mint });
       if (data.error || !data.level) continue;
@@ -514,6 +531,7 @@ const app = {
 
       // Don't block the main refresh on alert re-checks
       this.checkWatchlistForRiskChanges();
+      this.fetchWalletPortfolios();
       if (this.isDesktop) this.renderHomeDashboard();
     } catch (err) {
       console.error('Refresh failed:', err);
