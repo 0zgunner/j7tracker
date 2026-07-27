@@ -157,10 +157,11 @@ async function checkDeployerHistory(deployerWallet) {
 
 async function checkBundledWallets(topHolders) {
   const candidates = topHolders.slice(1, 6); // holders #2-#6
-  if (candidates.length === 0) return { freshCount: 0, checked: 0 };
+  if (candidates.length === 0) return { freshCount: 0, checked: 0, sharedFunderCount: 0 };
 
   let freshCount = 0;
   let checked = 0;
+  const funders = [];
 
   for (const holder of candidates) {
     try {
@@ -172,15 +173,33 @@ async function checkBundledWallets(topHolders) {
       checked++;
       // A wallet with only a handful of total signatures ever is very likely
       // a fresh, purpose-made wallet rather than an established trader.
-      if (Array.isArray(sigs) && sigs.length <= 3) {
+      if (Array.isArray(sigs) && sigs.length > 0 && sigs.length <= 3) {
         freshCount++;
+        // Look at its oldest available transaction to find who funded it -
+        // multiple fresh wallets sharing the same funder is much stronger
+        // bundling evidence than transaction count alone.
+        try {
+          const genesisSig = sigs[sigs.length - 1].signature;
+          const tx = await rpcCall('getTransaction', [genesisSig, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]);
+          const feePayerRaw = tx?.transaction?.message?.accountKeys?.[0];
+          const feePayer = typeof feePayerRaw === 'string' ? feePayerRaw : feePayerRaw?.pubkey;
+          if (feePayer) funders.push(feePayer);
+        } catch (innerErr) {
+          console.error('Funder lookup failed for a fresh wallet:', innerErr.message);
+        }
       }
     } catch (err) {
       console.error('Bundled wallet check failed for a holder:', err.message);
     }
   }
 
-  return { freshCount, checked };
+  // Count how many funders appear more than once - that's wallets funded
+  // by the same source, a real bundling signature.
+  const funderCounts = {};
+  funders.forEach(f => { funderCounts[f] = (funderCounts[f] || 0) + 1; });
+  const sharedFunderCount = Object.values(funderCounts).filter(c => c > 1).reduce((sum, c) => sum + c, 0);
+
+  return { freshCount, checked, sharedFunderCount };
 }
 
 async function getMarketData(mintAddress) {
@@ -239,6 +258,13 @@ function checkExtensions(parsed) {
 const KNOWN_BURN_ADDRESSES = new Set([
   '1nc1nerator11111111111111111111111111111'
 ]);
+
+// Known LP/token locker program IDs - when the LP holder is controlled by
+// one of these, we can name the actual locker instead of just saying
+// "some program, unclear which."
+const KNOWN_LOCKER_PROGRAMS = {
+  '8e72pYCDaxu3GqMfeQ5r8wFgoZSYk6oua1Qo9XpsZjX': 'Streamflow'
+};
 
 // Checks whether the pool's LP tokens are burned, locked in a program, or
 // sitting in a plain wallet (the real rug-pull lever: whoever holds the LP
@@ -329,7 +355,11 @@ async function checkLiquidityLock(market) {
       const ownerProgram = walletInfo?.value?.owner;
       const isProgramControlled = ownerProgram && ownerProgram !== '11111111111111111111111111111111';
       if (isProgramControlled) {
-        return { status: 'possibly_locked', detail: 'Largest LP holder is a program-controlled address (possibly a locker service) — verify manually which one.' };
+        const knownLocker = KNOWN_LOCKER_PROGRAMS[ownerProgram];
+        if (knownLocker) {
+          return { status: 'locked', detail: `Largest LP holder is controlled by ${knownLocker}, a known token locker — liquidity appears genuinely locked, not just sitting in an unknown program.` };
+        }
+        return { status: 'possibly_locked', detail: 'Largest LP holder is a program-controlled address (possibly a locker service we don\'t recognize by name) — verify manually which one.' };
       }
       return { status: 'unlocked', detail: 'Largest LP holder is a regular wallet — liquidity does not appear burned or locked, and could be withdrawn at any time.' };
     }
@@ -407,7 +437,13 @@ function computeRisk(parsed, owner, topHolders, market, topHolderType, bundleChe
 
   // Bundled wallet heuristic
   if (bundleCheck && bundleCheck.checked > 0) {
-    if (bundleCheck.freshCount >= 3) {
+    if (bundleCheck.sharedFunderCount >= 2) {
+      flags.push({
+        severity: 'high',
+        label: `${bundleCheck.sharedFunderCount} of the next largest holders were funded by the SAME source wallet — strong bundling evidence, not just circumstantial`
+      });
+      riskPoints += 40;
+    } else if (bundleCheck.freshCount >= 3) {
       flags.push({
         severity: 'high',
         label: `${bundleCheck.freshCount} of the next largest holders look like freshly created wallets with almost no history — possible bundled/sniper buying at launch`
@@ -483,7 +519,7 @@ function computeRisk(parsed, owner, topHolders, market, topHolderType, bundleChe
     } else if (liquidityLock.status === 'possibly_locked') {
       flags.push({ severity: 'medium', label: liquidityLock.detail });
       riskPoints += 10;
-    } else if (liquidityLock.status === 'burned' || liquidityLock.status === 'locked_by_design') {
+    } else if (liquidityLock.status === 'burned' || liquidityLock.status === 'locked_by_design' || liquidityLock.status === 'locked') {
       flags.push({ severity: 'ok', label: liquidityLock.detail });
     } else {
       flags.push({ severity: 'medium', label: liquidityLock.detail });

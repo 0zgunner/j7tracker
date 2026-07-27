@@ -409,7 +409,9 @@ const app = {
       mint, chain, level: data.level, score: data.score,
       concentrationPct: data.concentrationPct, checkedAt: data.checkedAt,
       flags: data.flags, marketCap: data.market?.marketCap || null,
-      pairAddress: data.market?.pairAddress || null
+      pairAddress: data.market?.pairAddress || null,
+      liquidityUsdAtScan: data.market?.liquidityUsd ?? null,
+      priceUsdAtScan: data.market?.priceUsd ?? null
     });
     this.watchlist = this.watchlist.slice(0, 50);
     this.saveWatchlist();
@@ -554,7 +556,10 @@ const app = {
   async checkWatchlistForRiskChanges() {
     const toRecheck = this.watchlist.slice(0, 10);
     for (const entry of toRecheck) {
-      const data = await this.fetchJson('token-risk', { mint: entry.mint });
+      const chain = entry.chain || 'solana';
+      const data = chain === 'solana'
+        ? await this.fetchJson('token-risk', { mint: entry.mint })
+        : await this.fetchJson('token-risk-evm', { address: entry.mint, chain });
       if (data.error || !data.level) continue;
       if (data.level !== entry.level) {
         const short = entry.mint.slice(0, 6) + '...' + entry.mint.slice(-4);
@@ -566,6 +571,89 @@ const app = {
     }
     this.saveWatchlist();
     this.renderWatchlist();
+  },
+
+  // ---------- Track record: do past risk calls actually hold up? ----------
+  // Compares each scan's liquidity at the time it was scanned against its
+  // CURRENT liquidity. A large drop is real evidence something rugged; a
+  // held/grown liquidity is evidence the token is still functioning. This
+  // is cross-referenced against the risk level assigned at scan time to
+  // see whether "high risk" calls actually preceded trouble, and whether
+  // "low risk" calls held up - the closest thing to an accuracy check we
+  // can build without a dedicated outcomes database.
+  async runTrackRecordAnalysis() {
+    const resultsEl = document.getElementById('trackRecordResults');
+    const eligible = this.watchlist.filter(w => {
+      const ageHours = (Date.now() - new Date(w.checkedAt).getTime()) / 3600000;
+      return ageHours >= 6 && w.liquidityUsdAtScan !== null && w.liquidityUsdAtScan !== undefined;
+    }).slice(0, 15);
+
+    if (eligible.length === 0) {
+      resultsEl.innerHTML = '<div class="empty-note">No scans old enough yet (need at least 6 hours) with liquidity data logged. Scan some tokens and check back later.</div>';
+      return;
+    }
+
+    resultsEl.innerHTML = '<div class="empty-note">Running analysis...</div>';
+
+    const outcomes = [];
+    for (const entry of eligible) {
+      const chain = entry.chain || 'solana';
+      const data = chain === 'solana'
+        ? await this.fetchJson('token-risk', { mint: entry.mint })
+        : await this.fetchJson('token-risk-evm', { address: entry.mint, chain });
+      const currentLiquidity = data?.market?.liquidityUsd;
+      if (currentLiquidity === undefined || currentLiquidity === null || !entry.liquidityUsdAtScan) continue;
+
+      const pctChange = entry.liquidityUsdAtScan > 0
+        ? ((currentLiquidity - entry.liquidityUsdAtScan) / entry.liquidityUsdAtScan) * 100
+        : null;
+      if (pctChange === null) continue;
+
+      let outcome;
+      if (pctChange <= -80) outcome = 'rugged';
+      else if (pctChange >= -20) outcome = 'healthy';
+      else outcome = 'declined';
+
+      outcomes.push({ mint: entry.mint, level: entry.level, outcome, pctChange, checkedAt: entry.checkedAt });
+    }
+
+    this.renderTrackRecordResults(outcomes);
+  },
+
+  renderTrackRecordResults(outcomes) {
+    const resultsEl = document.getElementById('trackRecordResults');
+    if (outcomes.length === 0) {
+      resultsEl.innerHTML = '<div class="empty-note">Could not compare liquidity for any eligible scans - try again later.</div>';
+      return;
+    }
+
+    const highRugged = outcomes.filter(o => o.level === 'high' && o.outcome === 'rugged').length;
+    const highHealthy = outcomes.filter(o => o.level === 'high' && o.outcome === 'healthy').length;
+    const lowRugged = outcomes.filter(o => o.level === 'low' && o.outcome === 'rugged').length;
+    const lowHealthy = outcomes.filter(o => o.level === 'low' && o.outcome === 'healthy').length;
+
+    const summaryHtml = `
+      <div class="track-record-summary">
+        <div class="tr-stat"><div class="tr-stat-value" style="color:var(--red);">${highRugged}</div><div class="tr-stat-label">High-risk calls that later lost 80%+ liquidity (correct call)</div></div>
+        <div class="tr-stat"><div class="tr-stat-value" style="color:var(--amber);">${highHealthy}</div><div class="tr-stat-label">High-risk calls that are still healthy (possibly overcautious)</div></div>
+        <div class="tr-stat"><div class="tr-stat-value" style="color:var(--red);">${lowRugged}</div><div class="tr-stat-label">Low-risk calls that later lost 80%+ liquidity (missed - concerning)</div></div>
+        <div class="tr-stat"><div class="tr-stat-value" style="color:var(--green);">${lowHealthy}</div><div class="tr-stat-label">Low-risk calls that are still healthy (correct call)</div></div>
+      </div>
+    `;
+
+    const listHtml = outcomes.map(o => {
+      const short = o.mint.slice(0, 6) + '...' + o.mint.slice(-4);
+      const outcomeColor = o.outcome === 'rugged' ? 'high' : o.outcome === 'healthy' ? 'low' : 'medium';
+      return `
+        <div class="track-record-row">
+          <span class="wl-mint">${short}</span>
+          <span class="risk-badge ${o.level}">flagged ${o.level}</span>
+          <span class="risk-badge ${outcomeColor}">${o.outcome} (${o.pctChange >= 0 ? '+' : ''}${o.pctChange.toFixed(0)}% liq)</span>
+        </div>`;
+    }).join('');
+
+    resultsEl.innerHTML = summaryHtml + `<div class="section-label" style="margin-top:14px;">Individual results</div>` + listHtml +
+      `<div class="placeholder-note">Based on liquidity change since each scan, not a perfect outcome measure - a large liquidity drop usually means real trouble, but can occasionally reflect normal market conditions too. Only scans at least 6 hours old are included.</div>`;
   },
 
   // ---------- Trend history (for time-based synthesis in chat) ----------

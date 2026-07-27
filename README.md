@@ -383,3 +383,41 @@ continues without them rather than failing.
 - **Activity filter**: filter chips above the wallet activity log let you
   view one wallet's transactions at a time instead of everything mixed
   together.
+
+## Everything from this round: track record + remaining Stage 2 gaps
+
+**Track record logging** — new "Run track record analysis" button in
+Watchlist. Compares each scan's liquidity at scan time (now logged
+automatically) against its current liquidity to see whether risk calls
+actually held up: high-risk calls that later lost 80%+ liquidity
+(correct), high-risk calls still healthy (possibly overcautious),
+low-risk calls that lost liquidity (a real miss, worth knowing about),
+and low-risk calls still healthy (correct). Only scans at least 6 hours
+old are included, since outcomes need time to reveal themselves. This
+runs on demand, not automatically, since it re-checks up to 15 scans at
+once - manually triggered to keep API usage reasonable.
+
+**Bundled wallet detection improved** — now checks whether multiple
+"fresh" top holders were funded by the *same* source wallet, not just
+counting low transaction history. Shared funding source is much stronger
+bundling evidence than transaction count alone, and is flagged
+separately with higher severity when found.
+
+**Liquidity lock detection improved** — now recognizes Streamflow (a
+real, confirmed locker program) by name when it's the LP holder, instead
+of just saying "some program, unclear which."
+
+**Deployer history extended to Ethereum/Robinhood Chain** — uses
+Etherscan/Blockscout's direct contract-creator lookup (cleaner than the
+Solana approach, which has to infer it from the genesis transaction) and
+checks the deployer's recent transactions for other contract creations.
+
+## Still open after this round
+
+- Cross-device sync, push notifications, Reddit connection (all Stage 1,
+  unchanged from before)
+- Liquidity lock still can't detect tokens burned via a straight Burn
+  instruction (no address to check for that case) and only recognizes
+  one named locker (Streamflow) by program ID
+- EVM coin breakdown for wallets (Ethereum/Robinhood Chain holdings by
+  wallet) still not built - Solana only

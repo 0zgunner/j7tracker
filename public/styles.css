@@ -186,6 +186,16 @@ header {
   font-family: var(--font-mono); font-size: 8px; text-transform: uppercase; color: var(--text-muted);
   background: var(--panel-raised); padding: 2px 5px; border-radius: 4px; margin-left: 6px;
 }
+
+.track-record-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tr-stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+.tr-stat-value { font-family: var(--font-mono); font-size: 20px; font-weight: 700; }
+.tr-stat-label { font-size: 10px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4; }
+.track-record-row {
+  display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.track-record-row:last-child { border-bottom: none; }
 .wallet-portfolio-value { font-family: var(--font-mono); font-size: 11px; color: var(--green); margin-top: 6px; font-weight: 600; }
 .wallet-portfolio-value.muted { color: var(--text-muted); font-weight: 400; font-style: italic; }
 .remove-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; }

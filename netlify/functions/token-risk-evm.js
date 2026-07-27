@@ -78,6 +78,42 @@ async function getHolderConcentration(chain, address) {
   }
 }
 
+// Etherscan/Blockscout both expose the contract creator directly, which
+// is far more reliable than the heuristic genesis-transaction lookup we
+// have to do on Solana.
+async function getContractCreator(chain, address) {
+  const cfg = CHAIN_CONFIG[chain];
+  try {
+    const url = `${cfg.explorerUrl}?module=contract&action=getcontractcreation&contractaddresses=${address}${cfg.apiKeyParam()}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const creator = data?.result?.[0]?.contractCreator;
+    return creator || null;
+  } catch (err) {
+    console.error('Contract creator lookup failed:', err.message);
+    return null;
+  }
+}
+
+// Checks whether the deployer wallet has created other contracts recently
+// (transactions where "to" is empty = contract creation), a serial-deployer
+// signal same as the Solana version. Bounded sample for speed.
+async function checkDeployerHistory(chain, deployerWallet) {
+  if (!deployerWallet) return { checked: false };
+  const cfg = CHAIN_CONFIG[chain];
+  try {
+    const url = `${cfg.explorerUrl}?module=account&action=txlist&address=${deployerWallet}&sort=desc${cfg.apiKeyParam()}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const txs = Array.isArray(data.result) ? data.result.slice(0, 30) : [];
+    const otherCreations = txs.filter(tx => !tx.to || tx.to === '').length;
+    return { checked: true, otherCreations, sampledCount: txs.length, deployerWallet };
+  } catch (err) {
+    console.error('EVM deployer history check failed:', err.message);
+    return { checked: false };
+  }
+}
+
 async function getMarketData(address) {
   // DexScreener's token endpoint searches globally by address across all
   // chains it indexes, so this is shared logic regardless of EVM chain.
@@ -157,7 +193,7 @@ async function checkHoneypot(address) {
   }
 }
 
-function computeRisk(chain, verified, ownerInfo, holders, market, honeypot, goplus) {
+function computeRisk(chain, verified, ownerInfo, holders, market, honeypot, goplus, deployerHistory) {
   const flags = [];
   let riskPoints = 0;
 
@@ -254,6 +290,27 @@ function computeRisk(chain, verified, ownerInfo, holders, market, honeypot, gopl
     riskPoints += 10;
   }
 
+  if (deployerHistory && deployerHistory.checked) {
+    const shortDeployer = deployerHistory.deployerWallet
+      ? `${deployerHistory.deployerWallet.slice(0, 6)}...${deployerHistory.deployerWallet.slice(-4)}`
+      : 'deployer';
+    if (deployerHistory.otherCreations >= 3) {
+      flags.push({
+        severity: 'high',
+        label: `Deployer wallet (${shortDeployer}) created ${deployerHistory.otherCreations} other contracts in its last ${deployerHistory.sampledCount} transactions — serial-deployer pattern`
+      });
+      riskPoints += 30;
+    } else if (deployerHistory.otherCreations >= 1) {
+      flags.push({
+        severity: 'medium',
+        label: `Deployer wallet (${shortDeployer}) created ${deployerHistory.otherCreations} other contract(s) recently`
+      });
+      riskPoints += 10;
+    } else {
+      flags.push({ severity: 'ok', label: `No other contract creations found from the deployer in its last ${deployerHistory.sampledCount} transactions` });
+    }
+  }
+
   if (!market) {
     flags.push({ severity: 'medium', label: 'No DEX pair found — token may not be trading yet or has no liquidity' });
     riskPoints += 15;
@@ -289,16 +346,19 @@ exports.handler = async (event) => {
   }
 
   try {
-    const [verified, ownerInfo, holders, market, honeypot, goplus] = await Promise.all([
+    const [verified, ownerInfo, holders, market, honeypot, goplus, deployerWallet] = await Promise.all([
       getSourceVerified(chain, address),
       getOwnerAddress(chain, address),
       getHolderConcentration(chain, address),
       getMarketData(address),
       chain === 'ethereum' ? checkHoneypot(address) : Promise.resolve({ checked: false }),
-      checkGoPlus(chain, address)
+      checkGoPlus(chain, address),
+      getContractCreator(chain, address)
     ]);
 
-    const risk = computeRisk(chain, verified, ownerInfo, holders, market, honeypot, goplus);
+    const deployerHistory = await checkDeployerHistory(chain, deployerWallet);
+
+    const risk = computeRisk(chain, verified, ownerInfo, holders, market, honeypot, goplus, deployerHistory);
 
     return {
       statusCode: 200,
