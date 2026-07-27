@@ -67,6 +67,7 @@ exports.handler = async (event) => {
       signals.push({
         chain: 'ethereum',
         type: 'wallet',
+        sourceAddress: addr,
         title,
         subtitle: `block ${tx.blockNumber} · gas used ${tx.gasUsed}`,
         timestamp: new Date(parseInt(tx.timeStamp, 10) * 1000).toISOString()

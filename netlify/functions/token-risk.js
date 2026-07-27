@@ -246,6 +246,47 @@ const KNOWN_BURN_ADDRESSES = new Set([
 // Only meaningful once a token has migrated off Pump.fun's bonding curve
 // onto an AMM like Raydium - pre-migration, liquidity lives in the bonding
 // curve program itself and can't be pulled directly.
+// Two supplementary free/keyless checks that cross-validate our own
+// on-chain analysis above. Both are wrapped defensively - if either
+// service is unreachable or its response shape doesn't match, this
+// degrades gracefully rather than breaking the whole scan.
+async function checkGoPlusSolana(mint) {
+  try {
+    const res = await fetch(`https://api.gopluslabs.io/api/v1/solana/token_security?contract_addresses=${mint}`);
+    const data = await res.json();
+    const info = data?.result?.[mint];
+    if (!info) return { available: false };
+    return {
+      available: true,
+      mintable: info.mintable?.status === '1',
+      freezable: info.freezable?.status === '1',
+      isTrue: info.metadata_mutable?.status,
+      top10HolderPct: info.top10_holder_amount && info.total_supply
+        ? (parseFloat(info.top10_holder_amount) / parseFloat(info.total_supply)) * 100 : null
+    };
+  } catch (err) {
+    console.error('GoPlus Solana check failed:', err.message);
+    return { available: false };
+  }
+}
+
+async function checkRugCheck(mint) {
+  try {
+    const res = await fetch(`https://api.rugcheck.xyz/v1/tokens/${mint}/report`);
+    const data = await res.json();
+    if (!data || data.error) return { available: false };
+    return {
+      available: true,
+      score: data.score,
+      riskLevel: data.score_normalised ? (data.score_normalised > 70 ? 'high' : data.score_normalised > 40 ? 'medium' : 'low') : null,
+      risks: Array.isArray(data.risks) ? data.risks.map(r => r.name || r.description).filter(Boolean).slice(0, 3) : []
+    };
+  } catch (err) {
+    console.error('RugCheck check failed:', err.message);
+    return { available: false };
+  }
+}
+
 async function checkLiquidityLock(market) {
   if (!market) return { status: 'unknown', detail: 'No DEX pair found to check.' };
 
@@ -300,7 +341,7 @@ async function checkLiquidityLock(market) {
   }
 }
 
-function computeRisk(parsed, owner, topHolders, market, topHolderType, bundleCheck, liquidityLock, deployerHistory) {
+function computeRisk(parsed, owner, topHolders, market, topHolderType, bundleCheck, liquidityLock, deployerHistory, goplusSol, rugcheck) {
   const flags = [];
   let riskPoints = 0;
 
@@ -414,6 +455,27 @@ function computeRisk(parsed, owner, topHolders, market, topHolderType, bundleChe
     });
   }
 
+  // Cross-validation from two free third-party scanners
+  if (goplusSol.available) {
+    if (goplusSol.mintable && !parsed.mintAuthority) {
+      flags.push({ severity: 'medium', label: 'GoPlus flags this token as mintable, though our own check saw mint authority revoked — worth a manual look' });
+      riskPoints += 10;
+    } else if (!goplusSol.mintable) {
+      flags.push({ severity: 'ok', label: 'GoPlus cross-check: not mintable' });
+    }
+  }
+  if (rugcheck.available) {
+    if (rugcheck.riskLevel === 'high') {
+      flags.push({ severity: 'high', label: `RugCheck.xyz independently scored this high risk${rugcheck.risks.length ? ` (flags: ${rugcheck.risks.join(', ')})` : ''}` });
+      riskPoints += 25;
+    } else if (rugcheck.riskLevel === 'medium') {
+      flags.push({ severity: 'medium', label: `RugCheck.xyz independently scored this medium risk${rugcheck.risks.length ? ` (flags: ${rugcheck.risks.join(', ')})` : ''}` });
+      riskPoints += 10;
+    } else if (rugcheck.riskLevel === 'low') {
+      flags.push({ severity: 'ok', label: 'RugCheck.xyz independently scored this low risk' });
+    }
+  }
+
   if (liquidityLock) {
     if (liquidityLock.status === 'unlocked') {
       flags.push({ severity: 'high', label: liquidityLock.detail });
@@ -487,16 +549,18 @@ exports.handler = async (event) => {
       getMarketData(mint)
     ]);
 
-    const [topHolderType, bundleCheck, liquidityLock, deployerWallet] = await Promise.all([
+    const [topHolderType, bundleCheck, liquidityLock, deployerWallet, goplusSol, rugcheck] = await Promise.all([
       topHolders.length > 0 ? checkTopHolderType(topHolders[0].address) : null,
       checkBundledWallets(topHolders),
       checkLiquidityLock(market),
-      findDeployerWallet(mint)
+      findDeployerWallet(mint),
+      checkGoPlusSolana(mint),
+      checkRugCheck(mint)
     ]);
 
     const deployerHistory = await checkDeployerHistory(deployerWallet);
 
-    const risk = computeRisk(parsed, owner, topHolders, market, topHolderType, bundleCheck, liquidityLock, deployerHistory);
+    const risk = computeRisk(parsed, owner, topHolders, market, topHolderType, bundleCheck, liquidityLock, deployerHistory, goplusSol, rugcheck);
 
     return {
       statusCode: 200,

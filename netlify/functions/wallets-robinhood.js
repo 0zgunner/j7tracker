@@ -64,6 +64,7 @@ exports.handler = async (event) => {
       signals.push({
         chain: 'robinhood',
         type: 'wallet',
+        sourceAddress: addr,
         title,
         subtitle: `block ${tx.blockNumber}${tx.to ? ` · to ${tx.to.slice(0, 6)}...${tx.to.slice(-4)}` : ''}`,
         timestamp: new Date(parseInt(tx.timeStamp, 10) * 1000).toISOString()

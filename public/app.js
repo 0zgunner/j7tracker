@@ -19,6 +19,8 @@ const app = {
   livePrice: null,
   trendingTokens: [],
   walletPortfolios: {},
+  activeWalletFilter: null,
+  expandedWallet: null,
   alerts: [],
   recognition: null,
   isListening: false, // deprecated, kept only to avoid breaking any stray references
@@ -43,6 +45,7 @@ const app = {
     this.speakGreeting();
     this.loadWallets();
     this.renderWallets();
+    this.renderWalletFilters();
     this.loadWatchlist();
     this.renderWatchlist();
     this.loadChatHistory();
@@ -178,7 +181,7 @@ const app = {
         : this.trendingTokens.slice(0, 5).map(t => {
             const changeClass = (t.priceChange24h || 0) >= 0 ? 'ok' : 'high';
             const changeSign = (t.priceChange24h || 0) >= 0 ? '+' : '';
-            return `<div class="trending-token-item" onclick="app.checkToken('${t.address}'); app.goToSection('watchlist');">
+            return `<div class="trending-token-item" onclick="app.checkToken('${t.address}', 'solana'); app.goToSection('watchlist');">
               <div class="tt-left"><div class="tt-symbol">${t.symbol || '?'}</div><div class="tt-name">${t.name || ''}</div></div>
               <div class="tt-right"><div class="tt-change ${changeClass}">${changeSign}${(t.priceChange24h || 0).toFixed(1)}%</div></div>
             </div>`;
@@ -242,22 +245,50 @@ const app = {
 
   addWallet() {
     const input = document.getElementById('walletInput');
+    const nicknameInput = document.getElementById('walletNicknameInput');
     const chain = document.getElementById('chainSelect').value;
     const address = input.value.trim();
+    const nickname = nicknameInput.value.trim();
     if (!address) return;
-    if (this.wallets.some(w => w.address === address && w.chain === chain)) { input.value = ''; return; }
-    this.wallets.push({ address, chain });
+    if (this.wallets.some(w => w.address === address && w.chain === chain)) { input.value = ''; nicknameInput.value = ''; return; }
+    this.wallets.push({ address, chain, nickname: nickname || null });
     this.saveWallets();
     input.value = '';
+    nicknameInput.value = '';
     this.renderWallets();
+    this.renderWalletFilters();
     this.refresh();
   },
 
   removeWallet(address, chain) {
     this.wallets = this.wallets.filter(w => !(w.address === address && w.chain === chain));
     this.saveWallets();
+    if (this.activeWalletFilter === address) this.activeWalletFilter = null;
     this.renderWallets();
+    this.renderWalletFilters();
+    this.renderWalletSignals();
     if (this.isDesktop) this.renderHomeDashboard();
+  },
+
+  renameWallet(address, chain) {
+    const wallet = this.wallets.find(w => w.address === address && w.chain === chain);
+    if (!wallet) return;
+    const newName = prompt('Nickname for this wallet:', wallet.nickname || '');
+    if (newName === null) return;
+    wallet.nickname = newName.trim() || null;
+    this.saveWallets();
+    this.renderWallets();
+    this.renderWalletFilters();
+  },
+
+  walletLabel(w) {
+    if (w.nickname) return w.nickname;
+    return w.address.length > 10 ? w.address.slice(0, 6) + '...' + w.address.slice(-4) : w.address;
+  },
+
+  toggleWalletExpand(address) {
+    this.expandedWallet = this.expandedWallet === address ? null : address;
+    this.renderWallets();
   },
 
   renderWallets() {
@@ -269,19 +300,67 @@ const app = {
     }
     list.innerHTML = this.wallets.map(w => {
       const short = w.address.length > 10 ? w.address.slice(0, 6) + '...' + w.address.slice(-4) : w.address;
+      const label = this.walletLabel(w);
       const portfolio = this.walletPortfolios[w.address];
+      const isExpanded = this.expandedWallet === w.address;
       const portfolioLine = portfolio
         ? `<div class="wallet-portfolio-value">$${portfolio.totalValueUsd.toLocaleString(undefined, {maximumFractionDigits: 2})} &middot; ${portfolio.solBalance.toFixed(3)} SOL</div>`
         : (w.chain === 'solana' ? '<div class="wallet-portfolio-value muted">Loading value...</div>' : '');
+
+      let breakdownHtml = '';
+      if (isExpanded) {
+        if (w.chain !== 'solana') {
+          breakdownHtml = `<div class="wallet-breakdown"><div class="empty-note">Coin breakdown is currently Solana-only.</div></div>`;
+        } else if (!portfolio) {
+          breakdownHtml = `<div class="wallet-breakdown"><div class="empty-note">Still loading holdings...</div></div>`;
+        } else if (!portfolio.topHoldings || portfolio.topHoldings.length === 0) {
+          breakdownHtml = `<div class="wallet-breakdown"><div class="empty-note">No priced token holdings found.</div></div>`;
+        } else {
+          breakdownHtml = `<div class="wallet-breakdown">${portfolio.topHoldings.map(h => `
+            <div class="holding-row">
+              <span class="holding-symbol">${h.symbol || '?'}</span>
+              <span class="holding-amount">${h.amount.toLocaleString(undefined, {maximumFractionDigits: 4})}</span>
+              <span class="holding-value">$${h.valueUsd.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+            </div>`).join('')}</div>`;
+        }
+      }
+
       return `
         <div class="wallet-card">
-          <div class="addr"><span>${short}</span>
-            <button class="remove-btn" onclick="app.removeWallet('${w.address}','${w.chain}')">&times;</button>
+          <div class="addr" onclick="app.toggleWalletExpand('${w.address}')" style="cursor:pointer;">
+            <span>${label}${w.nickname ? `<span class="wallet-addr-sub">${short}</span>` : ''}</span>
+            <span class="wallet-card-actions">
+              <button class="rename-btn" onclick="event.stopPropagation(); app.renameWallet('${w.address}','${w.chain}');" title="Rename">&#9998;</button>
+              <button class="remove-btn" onclick="event.stopPropagation(); app.removeWallet('${w.address}','${w.chain}');" title="Remove">&times;</button>
+            </span>
           </div>
-          <div class="chain-tag">${w.chain}</div>
+          <div class="chain-tag">${w.chain}${w.chain === 'solana' ? ' &middot; tap to see holdings' : ''}</div>
           ${portfolioLine}
+          ${breakdownHtml}
         </div>`;
     }).join('');
+  },
+
+  renderWalletFilters() {
+    const row = document.getElementById('walletFilterRow');
+    if (!row) return;
+    if (this.wallets.length === 0) {
+      row.innerHTML = '';
+      return;
+    }
+    const allActive = !this.activeWalletFilter;
+    row.innerHTML = `
+      <button class="filter-chip ${allActive ? 'active' : ''}" onclick="app.setWalletFilter(null)">All</button>
+      ${this.wallets.map(w => `
+        <button class="filter-chip ${this.activeWalletFilter === w.address ? 'active' : ''}" onclick="app.setWalletFilter('${w.address}')">${this.walletLabel(w)}</button>
+      `).join('')}
+    `;
+  },
+
+  setWalletFilter(address) {
+    this.activeWalletFilter = address;
+    this.renderWalletFilters();
+    this.renderWalletSignals();
   },
 
   async fetchWalletPortfolios() {
@@ -304,22 +383,30 @@ const app = {
   },
   saveWatchlist() { localStorage.setItem('j7t_watchlist', JSON.stringify(this.watchlist)); },
 
-  async checkToken(prefilledMint) {
+  async checkToken(prefilledMint, prefilledChain) {
     const input = document.getElementById('tokenInput');
-    const mint = prefilledMint || input.value.trim();
-    if (!mint) return;
+    const chainSelect = document.getElementById('scanChainSelect');
+    const chain = prefilledChain || (chainSelect ? chainSelect.value : 'solana');
+    const address = prefilledMint || input.value.trim();
+    if (!address) return;
     const resultEl = document.getElementById('tokenCheckResult');
     resultEl.innerHTML = '<div class="empty-note">Scanning...</div>';
 
-    const data = await this.fetchJson('token-risk', { mint });
+    const data = chain === 'solana'
+      ? await this.fetchJson('token-risk', { mint: address })
+      : await this.fetchJson('token-risk-evm', { address, chain });
+
     if (data.error) {
       resultEl.innerHTML = `<div class="empty-note">Scan failed: ${data.error}</div>`;
       return;
     }
+    // Normalize: Solana's function returns "mint", the EVM function
+    // returns "address" - unify to "mint" for everything downstream.
+    const mint = data.mint || data.address;
     this.renderTokenCheck(data, resultEl);
 
     this.watchlist.unshift({
-      mint: data.mint, level: data.level, score: data.score,
+      mint, chain, level: data.level, score: data.score,
       concentrationPct: data.concentrationPct, checkedAt: data.checkedAt,
       flags: data.flags, marketCap: data.market?.marketCap || null,
       pairAddress: data.market?.pairAddress || null
@@ -327,10 +414,10 @@ const app = {
     this.watchlist = this.watchlist.slice(0, 50);
     this.saveWatchlist();
     this.renderWatchlist();
-    input.value = '';
+    if (!prefilledMint) input.value = '';
 
-    this.lastScannedMint = data.mint;
-    const shortMint = `${data.mint.slice(0, 6)}...${data.mint.slice(-4)}`;
+    this.lastScannedMint = mint;
+    const shortMint = `${mint.slice(0, 6)}...${mint.slice(-4)}`;
     this.setScannedChartTarget(data.market?.pairAddress, shortMint);
     if (this.isDesktop) this.renderHomeDashboard();
   },
@@ -347,7 +434,7 @@ const app = {
     ` : '';
     el.innerHTML = `
       <div class="token-check-card">
-        <div class="mint">${data.mint}</div>
+        <div class="mint">${data.mint || data.address}</div>
         <span class="risk-badge ${data.level}">${data.level} risk</span>
         ${marketHtml}
         <div class="flag-list">${flagsHtml}</div>
@@ -364,10 +451,11 @@ const app = {
     el.innerHTML = this.watchlist.map((w, i) => {
       const short = w.mint.slice(0, 6) + '...' + w.mint.slice(-4);
       const mcap = w.marketCap ? `$${Number(w.marketCap).toLocaleString()} mcap` : '';
+      const chainTag = w.chain && w.chain !== 'solana' ? `<span class="wl-chain-tag">${w.chain}</span>` : '';
       return `
         <div class="watchlist-card">
           <div class="wl-top">
-            <span class="wl-mint" onclick="app.openWatchlistChart('${w.pairAddress || ''}')" style="cursor:pointer;">${short}</span>
+            <span class="wl-mint" onclick="app.openWatchlistChart('${w.pairAddress || ''}')" style="cursor:pointer;">${short}${chainTag}</span>
             <div style="display:flex; align-items:center; gap:8px;">
               <span class="risk-badge ${w.level}">${w.level}</span>
               <button class="remove-btn" onclick="event.stopPropagation(); app.removeFromWatchlist(${i});" title="Remove">&times;</button>
@@ -571,15 +659,20 @@ const app = {
 
   renderWalletSignals() {
     const log = document.getElementById('walletSignalLog');
-    if (this.walletSignals.length === 0) {
-      log.innerHTML = '<div class="empty-note">No wallet activity yet.</div>';
+    const filtered = this.activeWalletFilter
+      ? this.walletSignals.filter(s => s.sourceAddress === this.activeWalletFilter)
+      : this.walletSignals;
+    if (filtered.length === 0) {
+      log.innerHTML = this.activeWalletFilter
+        ? '<div class="empty-note">No activity yet for this wallet.</div>'
+        : '<div class="empty-note">No wallet activity yet.</div>';
       return;
     }
-    log.innerHTML = this.walletSignals.slice(0, 25).map(s => {
+    log.innerHTML = filtered.slice(0, 25).map(s => {
       const tappable = !!s.boughtMint;
       const actions = tappable ? `
         <div class="signal-actions">
-          <button class="signal-action-btn" onclick="event.stopPropagation(); app.checkToken('${s.boughtMint}'); app.goToSection('watchlist');">Analyze risk</button>
+          <button class="signal-action-btn" onclick="event.stopPropagation(); app.checkToken('${s.boughtMint}', 'solana'); app.goToSection('watchlist');">Analyze risk</button>
           <button class="signal-action-btn" onclick="event.stopPropagation(); window.open('https://dexscreener.com/solana/${s.boughtMint}', '_blank', 'noopener');">View chart &#8599;</button>
         </div>` : '';
       return `
@@ -635,7 +728,7 @@ const app = {
       const changeClass = (t.priceChange24h || 0) >= 0 ? 'ok' : 'high';
       const changeSign = (t.priceChange24h || 0) >= 0 ? '+' : '';
       return `
-        <div class="trending-token-item" onclick="app.checkToken('${t.address}'); app.goToSection('watchlist');">
+        <div class="trending-token-item" onclick="app.checkToken('${t.address}', 'solana'); app.goToSection('watchlist');">
           <div class="tt-left">
             <div class="tt-symbol">${t.symbol || '?'}</div>
             <div class="tt-name">${t.name || ''}</div>

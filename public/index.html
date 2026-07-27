@@ -188,6 +188,10 @@
       <p class="placeholder-note">Uses your browser's built-in speech recognition (best support in Chrome). Only listens while this tab is open.</p>
     </div>
     <div class="panel">
+      <div class="panel-header">Risk scanning</div>
+      <p class="placeholder-note" style="margin-top:0;">Ethereum tokens are checked by default with GoPlus Security (free, no key needed). For an extra layer, honeypot.is adds buy/sell simulation — it needs its own free API key. Add HONEYPOT_API_KEY in your Netlify environment variables to enable it; without it, GoPlus alone still covers honeypot detection.</p>
+    </div>
+    <div class="panel">
       <div class="panel-header">About this build</div>
       <p class="placeholder-note" style="margin-top:0;">Read-only tracker. No wallet with trading permissions exists. No funds are held or moved by this app. All data sources are free-tier APIs.</p>
     </div>
@@ -254,10 +258,12 @@
       </div>
       <div class="inline-form">
         <input type="text" id="walletInput" placeholder="wallet address">
+        <input type="text" id="walletNicknameInput" placeholder="nickname (optional)" style="max-width:120px;">
         <button onclick="app.addWallet()">Add</button>
       </div>
       <div id="walletList"></div>
       <div class="section-label" style="margin-top:16px;">Wallet activity</div>
+      <div class="wallet-filter-row" id="walletFilterRow"></div>
       <div id="walletSignalLog"></div>
     </div>
     </div>
@@ -295,10 +301,18 @@
       <i class="chevron" id="watchlistChevron">&#8250;</i>
     </div>
     <div class="card-body" id="watchlistBody" style="display:none;">
+      <div class="chain-select">
+        <select id="scanChainSelect">
+          <option value="solana">Solana</option>
+          <option value="ethereum">Ethereum</option>
+          <option value="robinhood">Robinhood Chain</option>
+        </select>
+      </div>
       <div class="inline-form">
-        <input type="text" id="tokenInput" placeholder="Solana token mint address">
+        <input type="text" id="tokenInput" placeholder="Token mint/contract address">
         <button onclick="app.checkToken()">Scan</button>
       </div>
+      <div class="placeholder-note" style="margin-top:0;">Ethereum needs ETHERSCAN_API_KEY configured. Robinhood Chain and Solana need no extra key beyond what's already set up.</div>
       <div id="tokenCheckResult"></div>
       <div class="section-label" style="margin-top:16px;">Scanned tokens</div>
       <div id="watchlist"></div>

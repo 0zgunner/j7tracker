@@ -72,6 +72,7 @@ exports.handler = async (event) => {
       signals.push({
         chain: 'solana',
         type: 'wallet',
+        sourceAddress: addr,
         title: `${addr.slice(0, 4)}...${addr.slice(-4)}: ${description}`,
         subtitle: tx.source ? `via ${tx.source}` : 'Solana mainnet',
         timestamp: new Date(tx.timestamp * 1000).toISOString(),

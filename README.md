@@ -345,3 +345,41 @@ instead of just 3.
   closed.
 - **Deployer history for Ethereum/Robinhood Chain tokens** - only built
   for Solana so far, since risk scanning in general is Solana-only.
+
+## Multi-chain risk scanning (Ethereum + Robinhood Chain)
+
+Watchlist now has a chain selector - Solana uses the original scanner,
+Ethereum and Robinhood Chain use a new one (token-risk-evm.js) checking:
+contract source verification, ownership renouncement (via eth_call to the
+standard owner() function), holder concentration (Robinhood Chain only -
+Etherscan's free tier doesn't expose a holder list for Ethereum), and
+liquidity/volume via DexScreener.
+
+**Default security layer: GoPlus Security** (free, no key, no signup -
+covers Ethereum only, since Robinhood Chain is too new for their
+supported chain list). Checks honeypot risk, mintability, hidden owners,
+buy/sell tax, and more.
+
+**Optional extra layer: honeypot.is** - unlike GoPlus, this needs its own
+free API key (HONEYPOT_API_KEY). Not required; GoPlus alone covers
+honeypot detection by default.
+
+## Solana scan cross-validation
+
+Solana scans now also query two free third-party scanners as a sanity
+check against our own analysis: **GoPlus's Solana beta endpoint** and
+**RugCheck.xyz**. Both are wrapped defensively - if either is unreachable
+or its response doesn't match the expected shape, the scan just
+continues without them rather than failing.
+
+## Wallet nicknames, coin breakdown, and activity filters
+
+- **Nicknames**: add an optional nickname when tracking a wallet, or
+  rename one later via the pencil icon on its card.
+- **Coin breakdown**: tap a Solana wallet card to expand it and see its
+  actual token holdings with amounts and USD values (reuses the
+  portfolio data already being fetched). Ethereum/Robinhood Chain don't
+  have this yet - no holdings-lookup function built for those chains.
+- **Activity filter**: filter chips above the wallet activity log let you
+  view one wallet's transactions at a time instead of everything mixed
+  together.

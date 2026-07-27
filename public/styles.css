@@ -159,6 +159,33 @@ header {
 }
 .wallet-card .addr { font-family: var(--font-mono); font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
 .wallet-card .chain-tag { font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-top: 4px; }
+
+.wallet-addr-sub { display: block; font-family: var(--font-mono); font-size: 9px; color: var(--text-muted); margin-top: 2px; font-weight: 400; }
+.wallet-card-actions { display: flex; align-items: center; gap: 8px; }
+.rename-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; }
+.rename-btn:hover { color: var(--purple); }
+
+.wallet-breakdown { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+.holding-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 5px 0; font-family: var(--font-mono); font-size: 11px;
+}
+.holding-symbol { color: var(--text-primary); font-weight: 700; flex: 1; }
+.holding-amount { color: var(--text-secondary); flex: 1; text-align: right; }
+.holding-value { color: var(--green); flex: 1; text-align: right; }
+
+.wallet-filter-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.filter-chip {
+  background: var(--panel); border: 1px solid var(--border); color: var(--text-secondary);
+  font-family: var(--font-mono); font-size: 10px; padding: 5px 10px; border-radius: 20px; cursor: pointer;
+}
+.filter-chip:hover { border-color: var(--blue); }
+.filter-chip.active { background: rgba(91,229,255,0.15); border-color: var(--blue); color: var(--blue); }
+
+.wl-chain-tag {
+  font-family: var(--font-mono); font-size: 8px; text-transform: uppercase; color: var(--text-muted);
+  background: var(--panel-raised); padding: 2px 5px; border-radius: 4px; margin-left: 6px;
+}
 .wallet-portfolio-value { font-family: var(--font-mono); font-size: 11px; color: var(--green); margin-top: 6px; font-weight: 600; }
 .wallet-portfolio-value.muted { color: var(--text-muted); font-weight: 400; font-style: italic; }
 .remove-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; }
