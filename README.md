@@ -421,3 +421,39 @@ checks the deployer's recent transactions for other contract creations.
   one named locker (Streamflow) by program ID
 - EVM coin breakdown for wallets (Ethereum/Robinhood Chain holdings by
   wallet) still not built - Solana only
+
+## Live market data fix (stale market cap bug)
+
+Real bug: watchlist entries only ever stored a market cap snapshot from
+the moment they were scanned, and both the Watchlist card display and
+the chat assistant were using that frozen number indefinitely - so
+asking about a token scanned yesterday gave yesterday's market cap, even
+when the actual current figure was very different.
+
+Fixed: the existing 5-minute background re-check (which already re-scans
+your 10 most recent watchlist entries for risk-level changes) now also
+refreshes a live marketCapCurrent/liquidityUsdCurrent/priceUsdCurrent
+field on each entry, timestamped with lastLiveCheckAt. The Watchlist
+card now shows this live figure labeled "(live, X ago)" instead of the
+frozen scan-time number, and the chat assistant is explicitly instructed
+to prefer the live field over the scan-time snapshot when asked what a
+token's market cap is right now.
+
+Honest limit: this only covers your 10 most recently scanned tokens
+(same bound as the existing risk re-check), and refreshes every 5
+minutes, not truly real-time - that would need a paid websocket/streaming
+data source. The original scan-time snapshot is still kept separately
+and untouched, since track record analysis needs that fixed baseline to
+compare against.
+
+## X/Twitter monitoring - not built (deferred)
+
+Investigated a Nitter-RSS-based approach with no API key needed, but
+confirmed Nitter is effectively dead for this purpose - every public
+instance currently has RSS disabled, since X cut off the guest-account
+access Nitter relied on back in 2024. The only remaining free/keyless
+option (X's own embed widgets) can show a specific account's timeline
+but can't do hashtag search or sentiment analysis, since that needs
+paid API access to read tweet text at all. Decision: parked until a
+paid X API tier is reconsidered, rather than building a stripped-down
+version now.

@@ -452,8 +452,15 @@ const app = {
     }
     el.innerHTML = this.watchlist.map((w, i) => {
       const short = w.mint.slice(0, 6) + '...' + w.mint.slice(-4);
-      const mcap = w.marketCap ? `$${Number(w.marketCap).toLocaleString()} mcap` : '';
       const chainTag = w.chain && w.chain !== 'solana' ? `<span class="wl-chain-tag">${w.chain}</span>` : '';
+
+      // Prefer the live-refreshed market cap over the frozen scan-time
+      // snapshot, since that's what was showing stale "yesterday" data.
+      const hasLive = w.marketCapCurrent !== undefined && w.marketCapCurrent !== null;
+      const mcap = hasLive
+        ? `$${Number(w.marketCapCurrent).toLocaleString()} mcap (live, ${this.timeAgo(w.lastLiveCheckAt)})`
+        : (w.marketCap ? `$${Number(w.marketCap).toLocaleString()} mcap (as of scan, ${this.timeAgo(w.checkedAt)})` : '');
+
       return `
         <div class="watchlist-card">
           <div class="wl-top">
@@ -463,7 +470,7 @@ const app = {
               <button class="remove-btn" onclick="event.stopPropagation(); app.removeFromWatchlist(${i});" title="Remove">&times;</button>
             </div>
           </div>
-          <div class="wl-time" onclick="app.openWatchlistChart('${w.pairAddress || ''}')" style="cursor:pointer;">${mcap ? mcap + ' · ' : ''}${this.timeAgo(w.checkedAt)}</div>
+          <div class="wl-time" onclick="app.openWatchlistChart('${w.pairAddress || ''}')" style="cursor:pointer;">${mcap}</div>
         </div>`;
     }).join('');
   },
@@ -561,12 +568,20 @@ const app = {
         ? await this.fetchJson('token-risk', { mint: entry.mint })
         : await this.fetchJson('token-risk-evm', { address: entry.mint, chain });
       if (data.error || !data.level) continue;
+
+      // Always refresh the "current" market snapshot regardless of
+      // whether the risk level changed - this is what fixes stale market
+      // cap/liquidity numbers being shown as if they were live.
+      entry.marketCapCurrent = data.market?.marketCap ?? entry.marketCapCurrent ?? null;
+      entry.liquidityUsdCurrent = data.market?.liquidityUsd ?? entry.liquidityUsdCurrent ?? null;
+      entry.priceUsdCurrent = data.market?.priceUsd ?? entry.priceUsdCurrent ?? null;
+      entry.lastLiveCheckAt = new Date().toISOString();
+
       if (data.level !== entry.level) {
         const short = entry.mint.slice(0, 6) + '...' + entry.mint.slice(-4);
         this.addAlert(`${short} risk changed: ${entry.level} → ${data.level}`);
         entry.level = data.level;
         entry.score = data.score;
-        entry.checkedAt = data.checkedAt;
       }
     }
     this.saveWatchlist();
