@@ -37,7 +37,6 @@ body { background: var(--bg); color: var(--text-primary); font-family: var(--fon
   .chat-log { padding: 0; }
   .card-group { display: flex; flex-direction: column; gap: 10px; }
   .alerts-banner { max-width: 100%; }
-  #chatWakeRow { display: none; }
 }
 
 @media (max-width: 899px) {
@@ -196,6 +195,15 @@ header {
   flex-wrap: wrap;
 }
 .track-record-row:last-child { border-bottom: none; }
+
+.sync-code-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+.sync-code {
+  font-family: var(--font-mono); font-size: 18px; font-weight: 700; letter-spacing: 3px;
+  background: var(--panel); border: 1px solid var(--purple); color: var(--purple);
+  padding: 8px 14px; border-radius: 8px;
+}
+.sync-status-row { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+.sync-status-row span { color: var(--green); }
 .wallet-portfolio-value { font-family: var(--font-mono); font-size: 11px; color: var(--green); margin-top: 6px; font-weight: 600; }
 .wallet-portfolio-value.muted { color: var(--text-muted); font-weight: 400; font-style: italic; }
 .remove-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; }

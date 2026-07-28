@@ -20,6 +20,10 @@ const app = {
   trendingTokens: [],
   walletPortfolios: {},
   activeWalletFilter: null,
+  syncCode: null,
+  lastModified: 0,
+  syncPushTimer: null,
+  syncInProgress: false,
   expandedWallet: null,
   alerts: [],
   recognition: null,
@@ -53,6 +57,7 @@ const app = {
     this.loadTrendHistory();
     this.loadAlerts();
     this.renderAlerts();
+    this.initSync();
 
     document.getElementById('chatInput').addEventListener('keypress', e => {
       if (e.key === 'Enter') this.sendChat();
@@ -88,8 +93,8 @@ const app = {
   },
 
   // ---------- Sidebar dashboard page switching (desktop only) ----------
-  ALL_PAGE_IDS: ['page-home', 'page-tradebot', 'page-settings'],
-  ALL_GROUP_IDS: { wallets: 'walletsGroup', updates: 'updatesGroup', watchlist: 'watchlistGroup', charts: 'chartsGroup', chat: 'chatGroup' },
+  ALL_PAGE_IDS: ['page-home', 'page-tradebot'],
+  ALL_GROUP_IDS: { wallets: 'walletsGroup', updates: 'updatesGroup', watchlist: 'watchlistGroup', charts: 'chartsGroup', chat: 'chatGroup', settings: 'settingsGroup' },
 
   showPage(name) {
     if (!this.isDesktop) { this.openSection(name); return; }
@@ -111,7 +116,7 @@ const app = {
 
     document.getElementById('hubBackBar').style.display = name === 'home' ? 'none' : 'flex';
 
-    if (name === 'home' || name === 'tradebot' || name === 'settings') {
+    if (name === 'home' || name === 'tradebot') {
       document.getElementById(`page-${name}`).style.display = 'block';
       if (name === 'home') this.renderHomeDashboard();
     } else if (this.ALL_GROUP_IDS[name]) {
@@ -241,7 +246,7 @@ const app = {
       this.wallets = stored ? JSON.parse(stored) : [];
     } catch { this.wallets = []; }
   },
-  saveWallets() { localStorage.setItem('j7t_wallets', JSON.stringify(this.wallets)); },
+  saveWallets() { localStorage.setItem('j7t_wallets', JSON.stringify(this.wallets)); this.markModified(); },
 
   addWallet() {
     const input = document.getElementById('walletInput');
@@ -381,7 +386,7 @@ const app = {
       this.watchlist = stored ? JSON.parse(stored) : [];
     } catch { this.watchlist = []; }
   },
-  saveWatchlist() { localStorage.setItem('j7t_watchlist', JSON.stringify(this.watchlist)); },
+  saveWatchlist() { localStorage.setItem('j7t_watchlist', JSON.stringify(this.watchlist)); this.markModified(); },
 
   async checkToken(prefilledMint, prefilledChain) {
     const input = document.getElementById('tokenInput');
@@ -528,7 +533,7 @@ const app = {
       this.alerts = stored ? JSON.parse(stored) : [];
     } catch { this.alerts = []; }
   },
-  saveAlerts() { localStorage.setItem('j7t_alerts', JSON.stringify(this.alerts.slice(0, 20))); },
+  saveAlerts() { localStorage.setItem('j7t_alerts', JSON.stringify(this.alerts.slice(0, 20))); this.markModified(); },
 
   addAlert(text) {
     this.alerts.unshift({ id: Date.now() + Math.random(), text, at: new Date().toISOString() });
@@ -853,6 +858,135 @@ const app = {
     if (textDesktop) textDesktop.textContent = label;
   },
 
+  // ---------- Two-way sync (Netlify Blobs, keyed by sync code) ----------
+  // Whole-state, last-write-wins sync - not a field-level merge. Each
+  // device tracks a lastModified timestamp; whichever device has the
+  // newer one "wins" and the other adopts its full state. This is the
+  // practical version of two-way sync for a single person using two
+  // devices, not a full CRDT - if you genuinely edit on both devices in
+  // the same few seconds before a sync completes, the older change can
+  // be overwritten. For normal use (editing on one device at a time)
+  // this reliably keeps both devices caught up with each other.
+  initSync() {
+    let code = localStorage.getItem('j7t_sync_code');
+    if (!code) {
+      code = this.generateSyncCode();
+      localStorage.setItem('j7t_sync_code', code);
+    }
+    this.syncCode = code;
+
+    const storedModified = localStorage.getItem('j7t_last_modified');
+    this.lastModified = storedModified ? parseInt(storedModified, 10) : Date.now();
+
+    this.renderSyncCodeDisplay();
+    this.performSync(); // pull-or-push on load
+    setInterval(() => this.performSync(), 60 * 1000);
+  },
+
+  generateSyncCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
+    let code = '';
+    for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
+  },
+
+  markModified() {
+    this.lastModified = Date.now();
+    localStorage.setItem('j7t_last_modified', String(this.lastModified));
+    // Debounce pushes so rapid successive changes (e.g. scanning several
+    // tokens back to back) don't each trigger a separate network call.
+    clearTimeout(this.syncPushTimer);
+    this.syncPushTimer = setTimeout(() => this.performSync(), 3000);
+  },
+
+  buildSyncPayload() {
+    return {
+      lastModified: this.lastModified,
+      wallets: this.wallets,
+      watchlist: this.watchlist,
+      alerts: this.alerts,
+      chatHistory: this.chatHistory
+    };
+  },
+
+  async performSync() {
+    if (!this.syncCode || this.syncInProgress) return;
+    this.syncInProgress = true;
+    try {
+      const res = await fetch(`${API_BASE}/sync?code=${this.syncCode}`, { cache: 'no-store' });
+      const result = await res.json();
+      const remote = result?.data;
+
+      if (remote && remote.lastModified > this.lastModified) {
+        // Remote is newer - adopt it.
+        this.wallets = remote.wallets || [];
+        this.watchlist = remote.watchlist || [];
+        this.alerts = remote.alerts || [];
+        this.chatHistory = remote.chatHistory || [];
+        this.lastModified = remote.lastModified;
+
+        localStorage.setItem('j7t_wallets', JSON.stringify(this.wallets));
+        localStorage.setItem('j7t_watchlist', JSON.stringify(this.watchlist));
+        localStorage.setItem('j7t_alerts', JSON.stringify(this.alerts));
+        localStorage.setItem('j7t_chat_history', JSON.stringify(this.chatHistory));
+        localStorage.setItem('j7t_last_modified', String(this.lastModified));
+
+        this.renderWallets();
+        this.renderWalletFilters();
+        this.renderWatchlist();
+        this.renderAlerts();
+        this.renderChatHistory();
+        this.refresh();
+        if (this.isDesktop) this.renderHomeDashboard();
+      } else {
+        // Local is newer (or nothing remote yet) - push it up.
+        await fetch(`${API_BASE}/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: this.syncCode, data: this.buildSyncPayload() })
+        });
+      }
+      this.setSyncStatus('synced');
+    } catch (err) {
+      console.error('Sync failed:', err.message);
+      this.setSyncStatus('error');
+    } finally {
+      this.syncInProgress = false;
+    }
+  },
+
+  setSyncStatus(status) {
+    const el = document.getElementById('syncStatusText');
+    if (!el) return;
+    el.textContent = status === 'synced' ? 'Synced' : status === 'error' ? 'Sync error' : 'Syncing...';
+  },
+
+  renderSyncCodeDisplay() {
+    const el = document.getElementById('syncCodeDisplay');
+    if (el) el.textContent = this.syncCode;
+  },
+
+  copySyncCode() {
+    navigator.clipboard.writeText(this.syncCode).then(() => alert('Sync code copied.'));
+  },
+
+  joinSyncCode() {
+    const input = document.getElementById('joinSyncInput');
+    const newCode = input.value.trim().toUpperCase();
+    if (!/^[A-Z0-9]{6,10}$/.test(newCode)) {
+      alert('That doesn\'t look like a valid sync code (letters/numbers, 6-10 characters).');
+      return;
+    }
+    if (!confirm('This will replace your local data with whatever is stored under that code, if anything exists there yet. Continue?')) return;
+    this.syncCode = newCode;
+    localStorage.setItem('j7t_sync_code', newCode);
+    this.lastModified = 0; // force pulling remote state if it exists
+    localStorage.setItem('j7t_last_modified', '0');
+    this.renderSyncCodeDisplay();
+    input.value = '';
+    this.performSync();
+  },
+
   // ---------- Chat persistence ----------
   loadChatHistory() {
     try {
@@ -865,6 +999,7 @@ const app = {
     const trimmed = this.chatHistory.slice(-60);
     localStorage.setItem('j7t_chat_history', JSON.stringify(trimmed));
     this.chatHistory = trimmed;
+    this.markModified();
   },
 
   renderChatHistory() {
@@ -1089,18 +1224,13 @@ const app = {
 
   toggleWakeWord(enabled) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const mobileBox = document.getElementById('wakeWordToggle');
-    const desktopBox = document.getElementById('wakeWordToggleDesktop');
+    const box = document.getElementById('wakeWordToggle');
     if (!SR) {
       alert('Wake word requires Chrome (SpeechRecognition not supported here).');
-      if (mobileBox) mobileBox.checked = false;
-      if (desktopBox) desktopBox.checked = false;
+      if (box) box.checked = false;
       return;
     }
-    // Keep both checkboxes (mobile chat card + desktop settings page) in
-    // sync, since both exist in the DOM at once now.
-    if (mobileBox) mobileBox.checked = enabled;
-    if (desktopBox) desktopBox.checked = enabled;
+    if (box) box.checked = enabled;
 
     this.wakeWordWanted = enabled;
     if (enabled) {

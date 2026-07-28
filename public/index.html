@@ -175,28 +175,6 @@
     </div>
   </div>
 
-  <!-- Settings (desktop only - wake word toggle lives here, moved out of chat) -->
-  <div class="page" id="page-settings" style="display:none;">
-    <div class="panel">
-      <div class="panel-header">Voice</div>
-      <div class="wake-word-row" style="padding:0;">
-        <label class="wake-toggle">
-          <input type="checkbox" id="wakeWordToggleDesktop" onchange="app.toggleWakeWord(this.checked)">
-          <span>Listen for "J7 activate"</span>
-        </label>
-      </div>
-      <p class="placeholder-note">Uses your browser's built-in speech recognition (best support in Chrome). Only listens while this tab is open.</p>
-    </div>
-    <div class="panel">
-      <div class="panel-header">Risk scanning</div>
-      <p class="placeholder-note" style="margin-top:0;">Ethereum tokens are checked by default with GoPlus Security (free, no key needed). For an extra layer, honeypot.is adds buy/sell simulation — it needs its own free API key. Add HONEYPOT_API_KEY in your Netlify environment variables to enable it; without it, GoPlus alone still covers honeypot detection.</p>
-    </div>
-    <div class="panel">
-      <div class="panel-header">About this build</div>
-      <p class="placeholder-note" style="margin-top:0;">Read-only tracker. No wallet with trading permissions exists. No funds are held or moved by this app. All data sources are free-tier APIs.</p>
-    </div>
-  </div>
-
   <div class="hub-back-bar" id="hubBackBar" style="display:none;">
     <button onclick="app.closeHubDetail()">&larr; Back to overview</button>
   </div>
@@ -223,12 +201,6 @@
           </button>
           <button class="send-btn" onclick="app.sendChat()">&#8593;</button>
         </div>
-      </div>
-      <div class="wake-word-row" id="chatWakeRow">
-        <label class="wake-toggle">
-          <input type="checkbox" id="wakeWordToggle" onchange="app.toggleWakeWord(this.checked)">
-          <span>Listen for "J7 activate"</span>
-        </label>
       </div>
       <div class="chat-log" id="chatLog"></div>
       <div class="chat-log-controls" id="chatLogControls" style="display:none;">
@@ -339,6 +311,45 @@
       <div class="placeholder-note" style="margin-top:0;">Charts open in a new tab on DexScreener instead of loading inline — more reliable than embedding.</div>
       <button class="launch-btn" onclick="app.openChartExternal()">Open general Solana chart &#8599;</button>
       <button class="launch-btn" id="lastScanChartBtn" onclick="app.openChartExternal(true)" style="display:none;">Open last scanned token's chart &#8599;</button>
+    </div>
+    </div>
+
+    <div class="card-group" id="settingsGroup">
+    <div class="card" id="settingsCardHeader" onclick="app.toggleSection('settings')">
+      <div class="card-left">
+        <div class="icon-box icon-purple">&#9881;</div>
+        <div>
+          <div class="card-title">Settings</div>
+          <div class="card-sub">Sync, voice, about</div>
+        </div>
+      </div>
+      <i class="chevron" id="settingsChevron">&#8250;</i>
+    </div>
+    <div class="card-body" id="settingsBody" style="display:none;">
+      <div class="section-label">Sync across devices</div>
+      <p class="placeholder-note" style="margin-top:0;">Your wallets, watchlist, alerts, and chat history sync automatically between devices that share this code. Whichever device made the most recent change wins if both change at once.</p>
+      <div class="sync-code-row">
+        <span class="sync-code" id="syncCodeDisplay">----</span>
+        <button class="launch-btn" style="margin:0; width:auto;" onclick="app.copySyncCode()">Copy</button>
+      </div>
+      <div class="sync-status-row">Status: <span id="syncStatusText">Syncing...</span></div>
+      <div class="inline-form" style="margin-top:14px;">
+        <input type="text" id="joinSyncInput" placeholder="Enter a code from another device">
+        <button onclick="app.joinSyncCode()">Join</button>
+      </div>
+
+      <div class="section-label" style="margin-top:20px;">Voice</div>
+      <label class="wake-toggle">
+        <input type="checkbox" id="wakeWordToggle" onchange="app.toggleWakeWord(this.checked)">
+        <span>Listen for "J7 activate"</span>
+      </label>
+      <p class="placeholder-note">Uses your browser's built-in speech recognition (best support in Chrome). Only listens while this tab is open.</p>
+
+      <div class="section-label" style="margin-top:20px;">Risk scanning</div>
+      <p class="placeholder-note" style="margin-top:0;">Ethereum tokens are checked by default with GoPlus Security (free, no key needed). For an extra layer, honeypot.is adds buy/sell simulation — it needs its own free API key. Add HONEYPOT_API_KEY in your Netlify environment variables to enable it; without it, GoPlus alone still covers honeypot detection.</p>
+
+      <div class="section-label" style="margin-top:20px;">About this build</div>
+      <p class="placeholder-note" style="margin-top:0;">Read-only tracker. No wallet with trading permissions exists. No funds are held or moved by this app. All data sources are free-tier APIs.</p>
     </div>
     </div>
 

@@ -457,3 +457,35 @@ but can't do hashtag search or sentiment analysis, since that needs
 paid API access to read tweet text at all. Decision: parked until a
 paid X API tier is reconsidered, rather than building a stripped-down
 version now.
+
+## Two-way sync across devices (Netlify Blobs)
+
+New "Settings" section (accessible on both mobile and desktop now,
+previously would have been desktop-only) shows a sync code. Enter that
+same code on another device to link them - your wallets, watchlist,
+alerts, and chat history sync automatically between any devices sharing
+a code.
+
+**How it works:** uses Netlify's own built-in storage (Netlify Blobs) -
+no new signup, no separate database needed, works with your existing
+Netlify account. Add `@netlify/blobs` to your dependencies (already in
+package.json) and it works automatically on deploy.
+
+**What kind of sync this actually is:** whole-state, last-write-wins,
+not a field-level merge. Each device tracks when it last changed
+something; every 60 seconds (and a few seconds after any local change)
+it checks the other device's copy - whichever is newer wins, and the
+older device adopts that full state. This reliably keeps two devices
+caught up with each other for normal use (editing on one device at a
+time). It is NOT a full conflict-resolution system - if you genuinely
+edit both devices within the same few seconds before a sync completes,
+the older change can be overwritten rather than merged. For how you'd
+actually use this (checking your phone, then later your laptop), that's
+not a real-world problem.
+
+**Settings restructure:** since sync needs to be usable from any device,
+Settings is no longer desktop-only - it's now a proper card-group
+alongside Wallets/Watchlist/etc., visible in the mobile card stack too.
+The wake-word toggle also moved here from inside the chat card (was
+duplicated across mobile/desktop before with awkward syncing logic -
+now there's just one).
