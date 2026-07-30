@@ -338,6 +338,11 @@
         <button onclick="app.joinSyncCode()">Join</button>
       </div>
 
+      <div class="section-label" style="margin-top:20px;">Push notifications</div>
+      <p class="placeholder-note" style="margin-top:0;">Reaches you with risk-change alerts even when this tab is closed, checked automatically every 30 minutes. Each device needs to enable this separately.</p>
+      <div class="sync-status-row" style="margin-bottom:8px;">Status: <span id="pushStatusText">Checking...</span></div>
+      <button class="launch-btn" id="pushToggleBtn" onclick="app.togglePushNotifications()">Enable push notifications</button>
+
       <div class="section-label" style="margin-top:20px;">Voice</div>
       <label class="wake-toggle">
         <input type="checkbox" id="wakeWordToggle" onchange="app.toggleWakeWord(this.checked)">

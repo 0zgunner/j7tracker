@@ -489,3 +489,48 @@ alongside Wallets/Watchlist/etc., visible in the mobile card stack too.
 The wake-word toggle also moved here from inside the chat card (was
 duplicated across mobile/desktop before with awkward syncing logic -
 now there's just one).
+
+## Real push notifications (reaches you with the browser closed)
+
+Previously, alerts only worked while a tab was open (the client polled
+every 5 minutes). This is real Web Push now: a service worker
+(public/sw.js), VAPID keys for authenticating your deployment to push
+services, and a scheduled Netlify Function (scheduled-alerts.js, runs
+every 30 minutes via netlify.toml) that independently re-checks your
+synced watchlist's risk levels and sends an actual push notification if
+something changed - no tab needs to be open for this to work.
+
+**Setup:**
+1. Add VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY to your `.env` and Netlify
+   environment variables (see the exact keys generated for you in chat,
+   or run `npx web-push generate-vapid-keys` for your own).
+2. `npm install` to pull in web-push (new dependency).
+3. Deploy. Then open Settings on each device you want alerts on and tap
+   "Enable push notifications" - browsers will prompt for permission.
+
+**How the scheduled check works:** every 30 minutes, it looks at every
+device that's both synced and has push enabled, re-checks up to 5 of
+their most recent watchlist entries, and sends a push if the risk level
+changed. Kept light (5 tokens, 30-minute interval) since it runs for
+every registered device automatically, not on-demand.
+
+**Honest limits:** each device needs its own permission grant (this
+isn't retroactive to devices that synced before enabling it). Some
+mobile browsers (especially iOS Safari outside of "Add to Home Screen"
+mode) have limited or no Web Push support - Android Chrome and desktop
+Chrome/Firefox are the most reliable targets for this.
+
+## EVM wallet coin breakdown
+
+Tap-to-expand coin breakdown now works for Ethereum and Robinhood Chain
+wallets too, not just Solana.
+
+- **Robinhood Chain**: solid - Blockscout exposes current token balances
+  directly, same reliability as everything else built on that explorer.
+- **Ethereum**: best-effort and labeled "(approx.)" in the UI. Etherscan's
+  free tier has no direct "all current balances" endpoint, so this sums
+  inbound minus outbound transfers from the wallet's ERC-20 transfer
+  history instead. Real limitation: very old activity beyond what gets
+  paginated through, or a wallet with an extremely long transfer history,
+  could produce a slightly off number. It's a genuine approximation, not
+  a guaranteed-exact balance.

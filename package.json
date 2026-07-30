@@ -9,6 +9,7 @@
     "node-fetch": "^2.6.11",
     "ethers": "^6.13.0",
     "@solana/web3.js": "^1.95.0",
-    "@netlify/blobs": "^8.1.0"
+    "@netlify/blobs": "^8.1.0",
+    "web-push": "^3.6.7"
   }
 }

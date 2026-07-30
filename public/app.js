@@ -58,6 +58,7 @@ const app = {
     this.loadAlerts();
     this.renderAlerts();
     this.initSync();
+    this.registerServiceWorker().then(() => this.checkPushStatus());
 
     document.getElementById('chatInput').addEventListener('keypress', e => {
       if (e.key === 'Enter') this.sendChat();
@@ -308,20 +309,28 @@ const app = {
       const label = this.walletLabel(w);
       const portfolio = this.walletPortfolios[w.address];
       const isExpanded = this.expandedWallet === w.address;
-      const portfolioLine = portfolio
-        ? `<div class="wallet-portfolio-value">$${portfolio.totalValueUsd.toLocaleString(undefined, {maximumFractionDigits: 2})} &middot; ${portfolio.solBalance.toFixed(3)} SOL</div>`
-        : (w.chain === 'solana' ? '<div class="wallet-portfolio-value muted">Loading value...</div>' : '');
+      const nativeSymbol = w.chain === 'solana' ? 'SOL' : 'ETH';
+
+      let portfolioLine = '<div class="wallet-portfolio-value muted">Loading value...</div>';
+      if (portfolio) {
+        if (w.chain === 'solana') {
+          portfolioLine = `<div class="wallet-portfolio-value">$${portfolio.totalValueUsd.toLocaleString(undefined, {maximumFractionDigits: 2})} &middot; ${portfolio.solBalance.toFixed(3)} SOL</div>`;
+        } else {
+          const approxTag = portfolio.approximate ? ' (approx.)' : '';
+          portfolioLine = `<div class="wallet-portfolio-value">$${(portfolio.tokensValueUsd || 0).toLocaleString(undefined, {maximumFractionDigits: 2})} in tokens${approxTag} &middot; ${portfolio.nativeBalance.toFixed(4)} ${nativeSymbol}</div>`;
+        }
+      }
 
       let breakdownHtml = '';
       if (isExpanded) {
-        if (w.chain !== 'solana') {
-          breakdownHtml = `<div class="wallet-breakdown"><div class="empty-note">Coin breakdown is currently Solana-only.</div></div>`;
-        } else if (!portfolio) {
+        if (!portfolio) {
           breakdownHtml = `<div class="wallet-breakdown"><div class="empty-note">Still loading holdings...</div></div>`;
         } else if (!portfolio.topHoldings || portfolio.topHoldings.length === 0) {
           breakdownHtml = `<div class="wallet-breakdown"><div class="empty-note">No priced token holdings found.</div></div>`;
         } else {
-          breakdownHtml = `<div class="wallet-breakdown">${portfolio.topHoldings.map(h => `
+          const approxNote = (w.chain !== 'solana' && portfolio.approximate)
+            ? `<div class="empty-note" style="margin-bottom:6px;">Approximate - derived from transfer history, not a direct balance read.</div>` : '';
+          breakdownHtml = `<div class="wallet-breakdown">${approxNote}${portfolio.topHoldings.map(h => `
             <div class="holding-row">
               <span class="holding-symbol">${h.symbol || '?'}</span>
               <span class="holding-amount">${h.amount.toLocaleString(undefined, {maximumFractionDigits: 4})}</span>
@@ -339,7 +348,7 @@ const app = {
               <button class="remove-btn" onclick="event.stopPropagation(); app.removeWallet('${w.address}','${w.chain}');" title="Remove">&times;</button>
             </span>
           </div>
-          <div class="chain-tag">${w.chain}${w.chain === 'solana' ? ' &middot; tap to see holdings' : ''}</div>
+          <div class="chain-tag">${w.chain} &middot; tap to see holdings</div>
           ${portfolioLine}
           ${breakdownHtml}
         </div>`;
@@ -370,12 +379,18 @@ const app = {
 
   async fetchWalletPortfolios() {
     const solanaWallets = this.wallets.filter(w => w.chain === 'solana');
-    await Promise.all(solanaWallets.map(async w => {
-      const data = await this.fetchJson('wallet-portfolio', { address: w.address });
-      if (data && !data.error) {
-        this.walletPortfolios[w.address] = data;
-      }
-    }));
+    const evmWallets = this.wallets.filter(w => w.chain !== 'solana');
+
+    await Promise.all([
+      ...solanaWallets.map(async w => {
+        const data = await this.fetchJson('wallet-portfolio', { address: w.address });
+        if (data && !data.error) this.walletPortfolios[w.address] = data;
+      }),
+      ...evmWallets.map(async w => {
+        const data = await this.fetchJson('wallet-portfolio-evm', { address: w.address, chain: w.chain });
+        if (data && !data.error) this.walletPortfolios[w.address] = data;
+      })
+    ]);
     this.renderWallets();
   },
 
@@ -867,6 +882,79 @@ const app = {
   // the same few seconds before a sync completes, the older change can
   // be overwritten. For normal use (editing on one device at a time)
   // this reliably keeps both devices caught up with each other.
+  // ---------- Push notifications (real, reach you even with tab closed) ----------
+  async registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return null;
+    try {
+      return await navigator.serviceWorker.register('/sw.js');
+    } catch (err) {
+      console.error('Service worker registration failed:', err.message);
+      return null;
+    }
+  },
+
+  urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+  },
+
+  async checkPushStatus() {
+    const statusEl = document.getElementById('pushStatusText');
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      if (statusEl) statusEl.textContent = 'Not supported in this browser';
+      return;
+    }
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    if (statusEl) statusEl.textContent = sub ? 'Enabled on this device' : 'Not enabled';
+    const btn = document.getElementById('pushToggleBtn');
+    if (btn) btn.textContent = sub ? 'Disable push notifications' : 'Enable push notifications';
+  },
+
+  async togglePushNotifications() {
+    const reg = await navigator.serviceWorker.getRegistration() || await this.registerServiceWorker();
+    if (!reg) { alert('Service workers aren\'t supported in this browser.'); return; }
+
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) {
+      await existing.unsubscribe();
+      await fetch(`${API_BASE}/push-subscribe?code=${this.syncCode}`, { method: 'DELETE' });
+      this.checkPushStatus();
+      return;
+    }
+
+    if (Notification.permission === 'denied') {
+      alert('Notifications are blocked for this site in your browser settings. Enable them there first, then try again.');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return;
+
+    const keyData = await this.fetchJson('vapid-public-key');
+    if (!keyData?.publicKey) {
+      alert('Push notifications aren\'t configured on this deployment yet (missing VAPID keys in Netlify environment variables).');
+      return;
+    }
+
+    try {
+      const subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: this.urlBase64ToUint8Array(keyData.publicKey)
+      });
+      await fetch(`${API_BASE}/push-subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: this.syncCode, subscription })
+      });
+      this.checkPushStatus();
+    } catch (err) {
+      console.error('Push subscription failed:', err.message);
+      alert('Could not enable push notifications: ' + err.message);
+    }
+  },
+
   initSync() {
     let code = localStorage.getItem('j7t_sync_code');
     if (!code) {
