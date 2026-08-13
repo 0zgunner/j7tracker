@@ -534,3 +534,94 @@ wallets too, not just Solana.
   paginated through, or a wallet with an extremely long transfer history,
   could produce a slightly off number. It's a genuine approximation, not
   a guaranteed-exact balance.
+
+## Stage 3 groundwork (decision support only - nothing executes)
+
+New "Stage 3 Prep" section, three pieces, none of which touch real
+funds or execute anything:
+
+**1. Rules engine (rules-engine.js)** - takes an existing Stage 2 scan
+and applies explicit, readable thresholds to produce a verdict: reject,
+review, or pass. Hard rejects: high overall risk, unlocked liquidity,
+confirmed shared-funder bundling, serial-deployer pattern, honeypot
+flags, liquidity below $10k, concentration above 40%. Soft flags (push
+to "review" not "reject"): medium risk, very late bonding curve
+progress, third-party scanner disagreement. Thresholds are constants at
+the top of the file - readable and adjustable, not a hidden scoring
+black box.
+
+**2. Position sizing calculator** - pure math, no wallet involved.
+Fixed-fractional risk sizing: enter portfolio value, risk % per trade,
+stop-loss %, and max concurrent positions; get a suggested position
+size, dollar risk if stopped out, and total exposure across all
+concurrent positions - with warnings if the stop-loss is unrealistically
+tight for memecoin volatility or if position count/risk-per-trade don't
+add up to a sane total.
+
+**3. Execution mechanics test (devnet-wallet.js, devnet-execute.js)** -
+proves the actual build-sign-send-confirm pipeline works, using
+Solana's free devnet (test network, zero real value, can't be moved to
+mainnet). Generate a fresh test wallet (private key shown once, never
+stored server-side), get free devnet SOL from the faucet, and send a
+real confirmed transaction to prove the mechanics. Honest limitation:
+devnet doesn't have meaningful DEX liquidity, so this only proves wallet
+and transaction mechanics - it can't test actual swap/trade execution
+logic (that would need its own testing approach later, against mainnet
+with tiny real amounts, when that point is actually reached).
+
+**Explicitly not built yet, and shouldn't be until the track record has
+real data:** any connection between the rules engine's verdict and an
+actual trade, any real wallet with trading permissions, and anything
+that executes automatically rather than just flagging.
+
+## Wake word conversational rewrite (finished)
+
+**Root cause found and fixed:** the old code stopped the wake-listening
+session and scheduled the command-listening session with a blind
+setTimeout guess (200ms), racing against the browser's own async
+teardown of the previous session. When that timing didn't line up, the
+wake phrase itself ("j7 activate") could leak through as if it were
+your actual question - which is exactly the "says what can I do for
+you and goes silent" symptom. Fixed: the transition now waits for the
+recognition object's own `onend` event (the reliable "fully stopped"
+signal) before starting the next session, instead of guessing with a
+timer.
+
+**Genuinely conversational now:** previously every follow-up question
+needed the wake word repeated. Now, after the assistant finishes
+*speaking* its reply (not just displaying it - the actual TTS
+completion), it automatically starts listening again for a follow-up if
+the exchange was voice-driven. This continues naturally until either:
+you go quiet (the listening session times out on silence and falls back
+to wake-word mode), or you manually tap the mic to stop. Typed messages
+don't trigger this auto-listen behavior - only voice-initiated ones,
+so it won't unexpectedly grab the mic if you're typing.
+
+## Token narrative / story lookup
+
+New: every Solana token scan now also pulls the deployer's own
+on-chain description and social links (Twitter, Telegram, website) -
+shown as a "Narrative" section right in the scan results. This is
+exactly the kind of thing that would have surfaced "sister coin to
+Dogecoin" style claims automatically, without needing to stumble onto
+it separately after the fact.
+
+**How it works:** every SPL token has an associated Metaplex metadata
+account at a deterministic address, regardless of whether it was ever
+boosted or promoted anywhere (unlike DexScreener's profile data, which
+only covers tokens someone paid to promote). This reads that metadata
+account directly, decodes the URI it points to, and pulls the
+description/socials from there - free, no API key beyond the Helius key
+already in use.
+
+**Framing matters here:** the description is the deployer's own,
+self-written claim - not verified fact. The UI and the chat assistant
+are both instructed to present it as "here's what the deployer says
+this coin is," not as confirmation that any claim in it (like being
+connected to another coin or project) is actually true. It's genuinely
+useful context, but it's marketing, not evidence.
+
+**Scope:** Solana only for now, since it depends on the Metaplex
+metadata standard specific to that chain. Persisted onto the matching
+Watchlist entry, so it's remembered and available to the chat assistant
+later, not just shown once during the scan.

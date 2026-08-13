@@ -95,7 +95,7 @@ const app = {
 
   // ---------- Sidebar dashboard page switching (desktop only) ----------
   ALL_PAGE_IDS: ['page-home', 'page-tradebot'],
-  ALL_GROUP_IDS: { wallets: 'walletsGroup', updates: 'updatesGroup', watchlist: 'watchlistGroup', charts: 'chartsGroup', chat: 'chatGroup', settings: 'settingsGroup' },
+  ALL_GROUP_IDS: { wallets: 'walletsGroup', updates: 'updatesGroup', watchlist: 'watchlistGroup', charts: 'chartsGroup', chat: 'chatGroup', settings: 'settingsGroup', stage3: 'stage3Group' },
 
   showPage(name) {
     if (!this.isDesktop) { this.openSection(name); return; }
@@ -442,6 +442,13 @@ const app = {
     const shortMint = `${mint.slice(0, 6)}...${mint.slice(-4)}`;
     this.setScannedChartTarget(data.market?.pairAddress, shortMint);
     if (this.isDesktop) this.renderHomeDashboard();
+
+    if (chain === 'solana') {
+      this.loadTokenNarrative(mint);
+    } else {
+      const narrativeEl = document.getElementById('tokenNarrativeSection');
+      if (narrativeEl) narrativeEl.innerHTML = '<div class="empty-note">Narrative lookup is currently Solana-only.</div>';
+    }
   },
 
   renderTokenCheck(data, el) {
@@ -460,7 +467,41 @@ const app = {
         <span class="risk-badge ${data.level}">${data.level} risk</span>
         ${marketHtml}
         <div class="flag-list">${flagsHtml}</div>
+        <div class="section-label" style="margin-top:14px;">Narrative</div>
+        <div id="tokenNarrativeSection"><div class="empty-note">Loading token description...</div></div>
       </div>`;
+  },
+
+  async loadTokenNarrative(mint) {
+    const el = document.getElementById('tokenNarrativeSection');
+    if (!el) return;
+    const data = await this.fetchJson('token-narrative', { mint });
+    if (data.error || (!data.description && !data.twitter && !data.telegram && !data.website)) {
+      el.innerHTML = '<div class="empty-note">No description or social links found in this token\'s on-chain metadata.</div>';
+      return;
+    }
+    const links = [
+      data.twitter ? `<a href="${data.twitter}" target="_blank" rel="noopener" class="narrative-link">Twitter/X &#8599;</a>` : '',
+      data.telegram ? `<a href="${data.telegram}" target="_blank" rel="noopener" class="narrative-link">Telegram &#8599;</a>` : '',
+      data.website ? `<a href="${data.website}" target="_blank" rel="noopener" class="narrative-link">Website &#8599;</a>` : ''
+    ].filter(Boolean).join(' &middot; ');
+
+    el.innerHTML = `
+      ${data.description ? `<p class="narrative-description">${data.description}</p>` : '<div class="empty-note">No description written for this token.</div>'}
+      ${links ? `<div class="narrative-links">${links}</div>` : ''}
+      <div class="placeholder-note" style="margin-top:8px;">This is the deployer's own description of their token, not independent verification of any claim made in it (e.g. "sister coin to X") - treat it as marketing, not fact.</div>
+    `;
+
+    // Persist onto the matching watchlist entry so this is remembered
+    // and available to the chat assistant later, not just shown once.
+    const entry = this.watchlist.find(w => w.mint === mint);
+    if (entry) {
+      entry.description = data.description || null;
+      entry.twitter = data.twitter || null;
+      entry.telegram = data.telegram || null;
+      entry.website = data.website || null;
+      this.saveWatchlist();
+    }
   },
 
   renderWatchlist() {
@@ -539,6 +580,155 @@ const app = {
       return;
     }
     window.open(`https://dexscreener.com/solana/${pairAddress}`, '_blank', 'noopener');
+  },
+
+  // ---------- Stage 3 prep: rules engine + position sizing (no execution) ----------
+  async runRulesEngine() {
+    const input = document.getElementById('rulesEngineInput');
+    const mint = input.value.trim();
+    if (!mint) return;
+    const resultEl = document.getElementById('rulesEngineResult');
+    resultEl.innerHTML = '<div class="empty-note">Evaluating against rules...</div>';
+
+    const data = await this.fetchJson('rules-engine', { mint });
+    if (data.error) {
+      resultEl.innerHTML = `<div class="empty-note">Evaluation failed: ${data.error}</div>`;
+      return;
+    }
+
+    const verdictClass = data.verdict === 'reject' ? 'high' : data.verdict === 'review' ? 'medium' : 'low';
+    const allReasons = [
+      ...data.reasons.reject.map(r => ({ text: r, severity: 'high' })),
+      ...data.reasons.review.map(r => ({ text: r, severity: 'medium' })),
+      ...data.reasons.pass.map(r => ({ text: r, severity: 'ok' }))
+    ];
+
+    resultEl.innerHTML = `
+      <div class="token-check-card">
+        <span class="risk-badge ${verdictClass}">${data.verdict.toUpperCase()}</span>
+        <div class="flag-list">
+          ${allReasons.map(r => `<div class="flag-item"><span class="flag-dot ${r.severity}"></span><span class="flag-text">${r.text}</span></div>`).join('')}
+        </div>
+        <div class="placeholder-note">This is a decision-support verdict only - nothing was bought, sold, or executed. Rules are fixed thresholds defined in the code, not adjustable from the UI yet.</div>
+      </div>`;
+  },
+
+  calculatePositionSizing() {
+    const portfolio = parseFloat(document.getElementById('sizingPortfolio').value) || 0;
+    const riskPct = parseFloat(document.getElementById('sizingRiskPct').value) || 0;
+    const stopPct = parseFloat(document.getElementById('sizingStopPct').value) || 0;
+    const maxPositions = parseInt(document.getElementById('sizingMaxPositions').value, 10) || 1;
+    const resultEl = document.getElementById('sizingResult');
+
+    if (portfolio <= 0 || riskPct <= 0 || stopPct <= 0) {
+      resultEl.innerHTML = '<div class="empty-note">Enter a portfolio value, risk %, and stop-loss % to calculate.</div>';
+      return;
+    }
+
+    // Fixed-fractional position sizing: risking riskPct of the portfolio
+    // per trade, sized so that hitting the stop-loss loses exactly that
+    // much - not the whole position.
+    const dollarRiskPerTrade = portfolio * (riskPct / 100);
+    const positionSize = dollarRiskPerTrade / (stopPct / 100);
+    const positionPctOfPortfolio = (positionSize / portfolio) * 100;
+    const maxTotalExposure = positionSize * maxPositions;
+    const maxExposurePct = (maxTotalExposure / portfolio) * 100;
+
+    const warnings = [];
+    if (stopPct < 15) {
+      warnings.push('A stop-loss this tight is often smaller than normal memecoin volatility - you may get stopped out by ordinary price noise, not an actual problem with the token.');
+    }
+    if (positionPctOfPortfolio > 25) {
+      warnings.push('This position size is a large share of your portfolio for a single token - consider whether that concentration is intentional.');
+    }
+    if (maxExposurePct > 100) {
+      warnings.push(`If all ${maxPositions} positions were open at once, total exposure (${maxExposurePct.toFixed(0)}%) would exceed your entire portfolio - your risk-per-trade and position count aren't consistent with each other.`);
+    }
+
+    resultEl.innerHTML = `
+      <div class="token-check-card">
+        <div class="sizing-output-row"><span>Suggested position size</span><span class="sizing-output-value">$${positionSize.toLocaleString(undefined, {maximumFractionDigits: 2})} (${positionPctOfPortfolio.toFixed(1)}% of portfolio)</span></div>
+        <div class="sizing-output-row"><span>Dollar risk if stopped out</span><span class="sizing-output-value">$${dollarRiskPerTrade.toLocaleString(undefined, {maximumFractionDigits: 2})}</span></div>
+        <div class="sizing-output-row"><span>Max exposure at ${maxPositions} concurrent positions</span><span class="sizing-output-value">$${maxTotalExposure.toLocaleString(undefined, {maximumFractionDigits: 2})} (${maxExposurePct.toFixed(0)}%)</span></div>
+        ${warnings.length ? `<div class="flag-list" style="margin-top:10px;">${warnings.map(w => `<div class="flag-item"><span class="flag-dot medium"></span><span class="flag-text">${w}</span></div>`).join('')}</div>` : ''}
+        <div class="placeholder-note">Pure math based on your inputs - not a recommendation, and doesn't know anything about the specific token you'd apply it to.</div>
+      </div>`;
+  },
+
+  // ---------- Devnet execution mechanics test (zero real value) ----------
+  devnetKeypair: null,
+
+  async generateDevnetWallet() {
+    const resultEl = document.getElementById('devnetWalletResult');
+    resultEl.innerHTML = '<div class="empty-note">Generating and requesting devnet SOL (may take a few seconds)...</div>';
+
+    try {
+      const res = await fetch(`${API_BASE}/devnet-wallet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestAirdrop: true })
+      });
+      const data = await res.json();
+      if (data.error) {
+        resultEl.innerHTML = `<div class="empty-note">Failed: ${data.error}</div>`;
+        return;
+      }
+
+      this.devnetKeypair = { publicKey: data.publicKey, privateKey: data.privateKey };
+
+      const airdropLine = data.airdropSignature
+        ? `<div class="flag-item"><span class="flag-dot ok"></span><span class="flag-text">Received 1 devnet SOL (tx: ${data.airdropSignature.slice(0, 12)}...)</span></div>`
+        : `<div class="flag-item"><span class="flag-dot medium"></span><span class="flag-text">${data.airdropError || 'No airdrop requested'}</span></div>`;
+
+      resultEl.innerHTML = `
+        <div class="token-check-card">
+          <div class="mint">${data.publicKey}</div>
+          <div class="flag-list">${airdropLine}</div>
+          <div class="placeholder-note">${data.warning}</div>
+        </div>`;
+
+      document.getElementById('devnetExecuteForm').style.display = 'block';
+    } catch (err) {
+      resultEl.innerHTML = `<div class="empty-note">Failed: ${err.message}</div>`;
+    }
+  },
+
+  async runDevnetTransfer() {
+    if (!this.devnetKeypair) {
+      alert('Generate a devnet wallet first.');
+      return;
+    }
+    const toAddress = document.getElementById('devnetToAddress').value.trim();
+    const amountSol = parseFloat(document.getElementById('devnetAmount').value);
+    if (!toAddress || !amountSol) {
+      alert('Enter a recipient address and amount.');
+      return;
+    }
+
+    const resultEl = document.getElementById('devnetExecuteResult');
+    resultEl.innerHTML = '<div class="empty-note">Building, signing, and sending transaction...</div>';
+
+    try {
+      const res = await fetch(`${API_BASE}/devnet-execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ privateKey: this.devnetKeypair.privateKey, toAddress, amountSol })
+      });
+      const data = await res.json();
+      if (data.error) {
+        resultEl.innerHTML = `<div class="empty-note">Transaction failed: ${data.error}</div>`;
+        return;
+      }
+      resultEl.innerHTML = `
+        <div class="token-check-card">
+          <span class="risk-badge low">CONFIRMED</span>
+          <div class="market-line">${data.amountSol} SOL sent on devnet</div>
+          <div class="market-line">Signature: ${data.signature.slice(0, 20)}...</div>
+          <button class="launch-btn" onclick="window.open('${data.explorerUrl}', '_blank', 'noopener')">View on Solana Explorer (devnet) &#8599;</button>
+        </div>`;
+    } catch (err) {
+      resultEl.innerHTML = `<div class="empty-note">Transaction failed: ${err.message}</div>`;
+    }
   },
 
   // ---------- Alerts ----------
@@ -1098,7 +1288,7 @@ const app = {
   },
 
   // ---------- Chat (with full history/context + trend history) ----------
-  async sendChat(spokenText) {
+  async sendChat(spokenText, isVoice) {
     const input = document.getElementById('chatInput');
     const message = spokenText || input.value.trim();
     if (!message) return;
@@ -1114,10 +1304,15 @@ const app = {
       top: snap.trends.slice(0, 4).map(t => `${t.name}(${t.count})`).join(', ')
     }));
 
+    const walletsWithPortfolio = this.wallets.map(w => ({
+      ...w,
+      portfolio: this.walletPortfolios[w.address] || null
+    }));
+
     const context = {
       livePrice: this.livePrice,
       currentlyTrendingSolanaTokens: this.trendingTokens,
-      watchedWallets: this.wallets,
+      watchedWallets: walletsWithPortfolio,
       watchlist: this.watchlist,
       walletSignals: this.walletSignals.slice(0, 50),
       newsItems: this.newsItems,
@@ -1136,11 +1331,27 @@ const app = {
 
       if (data.error) {
         this.appendChatBubble('assistant', `Error: ${data.error}`);
+        if (isVoice) this.voiceConversationActive = false;
         return;
       }
       const cleanReply = this.stripMarkdown(data.reply);
       this.appendChatBubble('assistant', cleanReply);
-      this.speak(cleanReply);
+
+      // For voice-driven exchanges, automatically listen for a follow-up
+      // once the reply finishes speaking - this is the actual
+      // "conversational" behavior: only the first turn needs the wake
+      // word, everything after flows naturally until you go quiet or
+      // stop it yourself.
+      if (isVoice && this.voiceConversationActive) {
+        this.speak(cleanReply, () => {
+          if (this.voiceConversationActive && this.voiceMode === 'idle') {
+            this.startCommandListening();
+          }
+        });
+      } else {
+        this.speak(cleanReply);
+      }
+
       this.chatHistory.push({ role: 'user', content: message });
       this.chatHistory.push({ role: 'assistant', content: cleanReply });
       this.saveChatHistory();
@@ -1148,6 +1359,7 @@ const app = {
     } catch (err) {
       thinkingEl.remove();
       this.appendChatBubble('assistant', `Error: ${err.message}`);
+      if (isVoice) this.voiceConversationActive = false;
     }
   },
 
@@ -1187,6 +1399,9 @@ const app = {
   // instance with a mode flag, so they properly hand off to each other.
   voiceMode: 'idle', // 'idle' | 'wake' | 'command'
   wakeWordWanted: false,
+  pendingAction: null, // 'startCommand' | null - what to do once the CURRENT session has fully torn down
+  commandCaptured: false, // did the current command session actually hear something
+  voiceConversationActive: false, // are we in a hands-free back-and-forth right now
 
   setupSpeechRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1204,20 +1419,35 @@ const app = {
       if (this.voiceMode === 'wake') {
         this.handleWakePhrase(transcript);
       } else if (this.voiceMode === 'command' && last.isFinal) {
+        this.commandCaptured = true;
         document.getElementById('chatInput').value = transcript;
-        this.sendChat(transcript);
+        this.sendChat(transcript, true);
       }
     };
 
+    // onend is the reliable signal that the browser has FULLY torn down
+    // the previous session - using it (rather than a fixed setTimeout
+    // guess) to trigger the next step is what actually fixes the race
+    // where the wake phrase itself could leak through as if it were the
+    // real question.
     this.recognition.onend = () => {
-      const wasCommand = this.voiceMode === 'command';
+      const wasCommandWithNoSpeech = this.voiceMode === 'command' && !this.commandCaptured;
       this.voiceMode = 'idle';
       document.getElementById('voiceBtn').classList.remove('listening');
       document.getElementById('voiceLabel').textContent = 'voice';
 
-      // Hand back to wake-word listening if it's still wanted and we
-      // just finished a one-off command, or if the session simply ended
-      // on silence while wake mode was active.
+      if (this.pendingAction === 'startCommand') {
+        this.pendingAction = null;
+        this.startCommandListening();
+        return;
+      }
+
+      // Silence timeout with nothing said - exit any conversational loop
+      // rather than sitting there having accomplished nothing.
+      if (wasCommandWithNoSpeech) {
+        this.voiceConversationActive = false;
+      }
+
       if (this.wakeWordWanted) {
         setTimeout(() => this.startWakeListening(), 350);
       }
@@ -1236,6 +1466,7 @@ const app = {
       } else {
         console.error('Speech recognition error:', e.error);
       }
+      this.voiceConversationActive = false;
     };
   },
 
@@ -1245,6 +1476,26 @@ const app = {
     this.recognition.interimResults = true;
     this.voiceMode = 'wake';
     try { this.recognition.start(); } catch (e) { /* already running */ }
+  },
+
+  // Actually starts the one-shot command listener. Only ever called once
+  // we know for certain no other session is active (either voiceMode was
+  // already 'idle', or onend just confirmed the previous session closed).
+  startCommandListening() {
+    if (!this.recognition) return;
+    this.commandCaptured = false;
+    this.recognition.continuous = false;
+    this.recognition.interimResults = false;
+    this.voiceMode = 'command';
+    document.getElementById('voiceBtn').classList.add('listening');
+    document.getElementById('voiceLabel').textContent = 'listening...';
+    try {
+      this.recognition.start();
+    } catch (e) {
+      // Session wasn't actually torn down yet despite our checks - retry
+      // shortly rather than silently failing.
+      setTimeout(() => { try { this.recognition.start(); } catch (e2) { /* ignore */ } }, 300);
+    }
   },
 
   toggleVoiceInput() {
@@ -1258,32 +1509,37 @@ const app = {
       this.synth.cancel();
     }
     if (this.voiceMode === 'command') {
+      this.voiceConversationActive = false; // manual stop ends any auto-loop
       this.recognition.stop();
       return;
     }
-    // Stop wake listening first (if active) so the command listener can
-    // take the mic - onend's handoff logic will resume wake mode after.
+    this.voiceConversationActive = true;
     if (this.voiceMode === 'wake') {
+      // Don't start a new session here - let onend (triggered by this
+      // stop) drive the transition once the wake session is truly closed.
+      this.pendingAction = 'startCommand';
       this.recognition.stop();
+      return;
     }
-    this.recognition.continuous = false;
-    this.recognition.interimResults = false;
-    this.voiceMode = 'command';
-    document.getElementById('voiceBtn').classList.add('listening');
-    document.getElementById('voiceLabel').textContent = 'listening...';
-    try { this.recognition.start(); } catch (e) {
-      // If it was mid-stop from wake mode, retry shortly after.
-      setTimeout(() => { try { this.recognition.start(); } catch (e2) { /* ignore */ } }, 300);
+    if (this.voiceMode === 'idle') {
+      this.startCommandListening();
     }
   },
 
-  speak(text) {
-    if (!this.synth) return;
+  speak(text, onSpeechEnd) {
+    if (!this.synth) {
+      if (onSpeechEnd) onSpeechEnd();
+      return;
+    }
     this.synth.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
-    utterance.onerror = (e) => console.error('Speech synthesis error:', e.error);
+    utterance.onerror = (e) => {
+      console.error('Speech synthesis error:', e.error);
+      if (onSpeechEnd) onSpeechEnd();
+    };
+    if (onSpeechEnd) utterance.onend = onSpeechEnd;
     this.synth.speak(utterance);
   },
 
@@ -1303,8 +1559,15 @@ const app = {
       return true;
     }
     if (transcript.includes('j7 activate') || transcript.includes('j seven activate')) {
+      // Don't call toggleVoiceInput() directly here - a fresh interim
+      // result can fire again before the browser has actually finished
+      // tearing down this wake session, which was the root cause of the
+      // wake phrase itself sometimes leaking through as if it were the
+      // real question. Instead, mark what should happen next and let
+      // onend (the reliable "fully stopped" signal) trigger it.
+      this.voiceConversationActive = true;
+      this.pendingAction = 'startCommand';
       this.recognition.stop();
-      setTimeout(() => this.toggleVoiceInput(), 200);
       return true;
     }
     return false;

@@ -38,6 +38,7 @@
     <button class="nav-item" data-page="watchlist" onclick="app.showPage('watchlist')"><span class="nav-icon">&#128737;</span>Watchlist</button>
     <button class="nav-item" data-page="updates" onclick="app.showPage('updates')"><span class="nav-icon">&#128200;</span>Analytics</button>
     <button class="nav-item" data-page="charts" onclick="app.showPage('charts')"><span class="nav-icon">&#128202;</span>Charts</button>
+    <button class="nav-item" data-page="stage3" onclick="app.showPage('stage3')"><span class="nav-icon">&#128272;</span>Stage 3 Prep</button>
     <button class="nav-item" data-page="tradebot" onclick="app.showPage('tradebot')"><span class="nav-icon">&#129302;</span>AI Trade Bot</button>
     <button class="nav-item" data-page="chat" onclick="app.showPage('chat')"><span class="nav-icon">&#128172;</span>Ask J7</button>
     <button class="nav-item" data-page="settings" onclick="app.showPage('settings')"><span class="nav-icon">&#9881;</span>Settings</button>
@@ -293,6 +294,60 @@
       <div class="section-label" style="margin-top:20px;">Track record</div>
       <button class="launch-btn" onclick="app.runTrackRecordAnalysis()">Run track record analysis</button>
       <div id="trackRecordResults" style="margin-top:10px;"></div>
+    </div>
+    </div>
+
+    <div class="card-group" id="stage3Group">
+    <div class="card" id="stage3CardHeader" onclick="app.toggleSection('stage3')">
+      <div class="card-left">
+        <div class="icon-box icon-amber">&#128272;</div>
+        <div>
+          <div class="card-title">Stage 3 Prep</div>
+          <div class="card-sub">Rules engine &amp; position sizing (no execution yet)</div>
+        </div>
+      </div>
+      <i class="chevron" id="stage3Chevron">&#8250;</i>
+    </div>
+    <div class="card-body" id="stage3Body" style="display:none;">
+      <div class="placeholder-note" style="margin-top:0;">Nothing here executes trades. This checks a token against explicit rules and calculates position sizing math only - purely decision support.</div>
+
+      <div class="section-label">Rules engine</div>
+      <div class="inline-form">
+        <input type="text" id="rulesEngineInput" placeholder="Solana token mint to evaluate">
+        <button onclick="app.runRulesEngine()">Evaluate</button>
+      </div>
+      <div id="rulesEngineResult"></div>
+
+      <div class="section-label" style="margin-top:20px;">Position sizing calculator</div>
+      <div class="sizing-form">
+        <label>Portfolio value (USD)
+          <input type="number" id="sizingPortfolio" placeholder="e.g. 500" min="0">
+        </label>
+        <label>Risk per trade (%)
+          <input type="number" id="sizingRiskPct" placeholder="e.g. 2" min="0" max="100" value="2">
+        </label>
+        <label>Stop-loss distance (%)
+          <input type="number" id="sizingStopPct" placeholder="e.g. 25" min="1" max="100" value="25">
+        </label>
+        <label>Max concurrent positions
+          <input type="number" id="sizingMaxPositions" placeholder="e.g. 5" min="1" value="5">
+        </label>
+      </div>
+      <button class="launch-btn" onclick="app.calculatePositionSizing()">Calculate</button>
+      <div id="sizingResult"></div>
+
+      <div class="section-label" style="margin-top:20px;">Execution mechanics test (devnet only)</div>
+      <p class="placeholder-note" style="margin-top:0;">Proves the build-sign-send-confirm pipeline works, using Solana's free test network. Zero real value - this key can never touch mainnet funds.</p>
+      <button class="launch-btn" onclick="app.generateDevnetWallet()">Generate a devnet test wallet</button>
+      <div id="devnetWalletResult"></div>
+      <div id="devnetExecuteForm" style="display:none; margin-top:10px;">
+        <div class="inline-form">
+          <input type="text" id="devnetToAddress" placeholder="Recipient devnet address">
+          <input type="number" id="devnetAmount" placeholder="SOL amount" value="0.1" step="0.01" style="max-width:100px;">
+          <button onclick="app.runDevnetTransfer()">Send test transfer</button>
+        </div>
+      </div>
+      <div id="devnetExecuteResult"></div>
     </div>
     </div>
 
